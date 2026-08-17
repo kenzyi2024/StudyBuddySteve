@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* ------------------------------------------------------------------ */
+/*  STUDY BUDDY STEVE — global retro layer                            */
+/*  CRT scanlines, pixel rendering, chunky selection, custom cursor   */
+/* ------------------------------------------------------------------ */
+
+@layer base {
+  :root {
+    color-scheme: dark;
+  }
+
+  html {
+    scroll-behavior: smooth;
+  }
+
+  body {
+    @apply bg-void text-beige font-body antialiased;
+    background-image:
+      radial-gradient(circle at 20% 10%, rgba(123, 47, 247, 0.25), transparent 45%),
+      radial-gradient(circle at 85% 80%, rgba(255, 46, 151, 0.18), transparent 40%),
+      linear-gradient(#0d0b1f, #0d0b1f);
+    min-height: 100vh;
+    overflow-x: hidden;
+  }
+
+  /* Keep pixel art crisp when scaled */
+  img[data-pixel],
+  svg[data-pixel] {
+    image-rendering: pixelated;
+  }
+
+  ::selection {
+    @apply bg-magenta text-ink;
+  }
+
+  /* Chunky retro scrollbar */
+  ::-webkit-scrollbar {
+    width: 14px;
+  }
+  ::-webkit-scrollbar-track {
+    background: #1a1533;
+  }
+  ::-webkit-scrollbar-thumb {
+    background: #ff2e97;
+    border: 3px solid #0a0812;
+  }
+}
+
+@layer components {
+  /* --- CRT scanline overlay: drop over any container --- */
+  .crt::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    pointer-events: none;
+    background: repeating-linear-gradient(
+      to bottom,
+      rgba(0, 0, 0, 0) 0px,
+      rgba(0, 0, 0, 0) 2px,
+      rgba(0, 0, 0, 0.18) 3px,
+      rgba(0, 0, 0, 0.18) 4px
+    );
+    z-index: 30;
+    mix-blend-mode: multiply;
+  }
+
+  /* subtle rolling scan bar */
+  .crt::after {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    height: 40%;
+    top: 0;
+    pointer-events: none;
+    background: linear-gradient(
+      to bottom,
+      rgba(255, 255, 255, 0.05),
+      rgba(255, 255, 255, 0)
+    );
+    animation: scan 5.5s linear infinite;
+    z-index: 31;
+  }
+
+  /* --- The chunky tactile panel used everywhere --- */
+  .retro-panel {
+    @apply bg-dusk border-5 border-ink shadow-chunk-lg relative;
+  }
+
+  /* --- Pixel-noise texture helper --- */
+  .noise {
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='40' height='40'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)' opacity='0.05'/%3E%3C/svg%3E");
+  }
+
+  /* Blinking terminal cursor block */
+  .caret::after {
+    content: '▮';
+    @apply text-crt animate-blink ml-1;
+  }
+}
+
+@layer utilities {
+  .text-shadow-chunk {
+    text-shadow: 4px 4px 0 #0a0812;
+  }
+  .text-shadow-glow {
+    text-shadow: 0 0 12px currentColor;
+  }
+  /* Respect reduced-motion preferences */
+  @media (prefers-reduced-motion: reduce) {
+    *,
+    *::before,
+    *::after {
+      animation-duration: 0.001ms !important;
+      animation-iteration-count: 1 !important;
+      transition-duration: 0.001ms !important;
+    }
+  }
+}

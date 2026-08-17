@@ -1,0 +1,21 @@
+{
+  "name": "study-buddy-steve-server",
+  "version": "0.1.0",
+  "type": "module",
+  "description": "Express API gateway for Study Buddy Steve.",
+  "main": "index.js",
+  "scripts": {
+    "dev": "nodemon index.js",
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "cors": "^2.8.5",
+    "dotenv": "^16.4.5",
+    "express": "^4.19.2",
+    "mongoose": "^8.5.1",
+    "multer": "^1.4.5-lts.1"
+  },
+  "devDependencies": {
+    "nodemon": "^3.1.4"
+  }
+}

@@ -1,127 +1,60 @@
 /**
- * MongoDB-backed data access, scoped by user. Every course/event operation
- * takes a userId so one user can never read or mutate another's data.
+ * Store facade. Selects a backend at boot:
+ *   - MongoDB (store.mongo.js) when MONGODB_URI is set and reachable — data persists.
+ *   - In-memory (store.memory.js) otherwise — so the app still runs for local
+ *     testing without MongoDB installed (data resets on restart).
  *
- * Returned objects are plain (lean) with an `id` string field, matching the
- * shape the frontend and .ics/sync code expect.
+ * Call initStore() once before serving requests. All other exports delegate to
+ * whichever backend was chosen.
  */
-import { User, Course, Event } from '../models/index.js'
+import * as mongoImpl from './store.mongo.js'
+import * as memImpl from './store.memory.js'
+import { connectMongo } from './db.js'
 
-// Normalize a Mongoose doc to the API shape ({ id, ... }).
-function courseOut(c) {
-  if (!c) return null
-  return {
-    id: String(c._id),
-    name: c.name,
-    term: c.term || '',
-    file: c.file || null,
-    parseStatus: c.parseStatus,
+let impl = memImpl
+let mode = 'memory'
+
+export async function initStore() {
+  if (process.env.MONGODB_URI) {
+    try {
+      await connectMongo()
+      impl = mongoImpl
+      mode = 'mongo'
+      return mode
+    } catch (e) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `⚠  MongoDB unavailable — falling back to IN-MEMORY store (data resets on ` +
+          `restart, not for production). Reason: ${e.message}`,
+      )
+    }
+  } else {
+    // eslint-disable-next-line no-console
+    console.warn(
+      '⚠  MONGODB_URI not set — using IN-MEMORY store (data resets on restart). ' +
+        'Set MONGODB_URI in .env to persist accounts and events.',
+    )
   }
+  impl = memImpl
+  mode = 'memory'
+  return mode
 }
 
-function eventOut(e) {
-  if (!e) return null
-  return {
-    id: String(e._id),
-    courseId: String(e.course),
-    title: e.title,
-    course: e.courseName || '',
-    type: e.type,
-    due: e.due instanceof Date ? e.due.toISOString() : e.due,
-    allDay: !!e.allDay,
-    approved: !!e.approved,
-    confidence: e.confidence ?? 0.5,
-    source: e.source || null,
-  }
-}
+export const storeMode = () => mode
 
-// --- users ---
-export async function findUserByEmail(email) {
-  return User.findOne({ email: String(email).toLowerCase().trim() })
-}
-export async function createUser({ email, name, passwordHash }) {
-  return User.create({ email, name, passwordHash })
-}
-export async function getUserById(userId) {
-  return User.findById(userId)
-}
-
-// --- courses ---
-export async function createCourse(userId, { name = 'Untitled Course', term = '', file } = {}) {
-  const c = await Course.create({ user: userId, name, term, file: file || null, parseStatus: 'queued' })
-  return courseOut(c)
-}
-export async function setCourseStatus(userId, courseId, status) {
-  const c = await Course.findOneAndUpdate(
-    { _id: courseId, user: userId },
-    { parseStatus: status },
-    { new: true },
-  )
-  return courseOut(c)
-}
-export async function getCourse(userId, courseId) {
-  return courseOut(await Course.findOne({ _id: courseId, user: userId }))
-}
-export async function setCourseName(userId, courseId, name) {
-  await Course.updateOne({ _id: courseId, user: userId }, { name })
-}
-
-// --- events ---
-export async function addEvents(userId, courseId, list = []) {
-  const course = await Course.findOne({ _id: courseId, user: userId })
-  if (!course) return []
-  const docs = list.map((e) => ({
-    course: course._id,
-    user: userId,
-    title: e.title || 'Untitled',
-    courseName: e.course || course.name || '',
-    type: e.type || 'other',
-    due: e.due ? new Date(e.due) : new Date(),
-    allDay: !!e.allDay,
-    approved: false,
-    confidence: e.confidence ?? 0.5,
-    source: e.source || null,
-  }))
-  const created = await Event.insertMany(docs)
-  return created.map(eventOut)
-}
-
-export async function eventsForCourse(userId, courseId) {
-  const list = await Event.find({ course: courseId, user: userId }).sort({ due: 1 })
-  return list.map(eventOut)
-}
-
-export async function approvedEventsForCourse(userId, courseId) {
-  const list = await Event.find({ course: courseId, user: userId, approved: true }).sort({ due: 1 })
-  return list.map(eventOut)
-}
-
-export async function updateEvent(userId, eventId, patch) {
-  const clean = {}
-  for (const k of ['title', 'type', 'due', 'allDay', 'approved']) {
-    if (k in patch) clean[k] = k === 'due' ? new Date(patch[k]) : patch[k]
-  }
-  if ('course' in patch) clean.courseName = patch.course
-  const e = await Event.findOneAndUpdate({ _id: eventId, user: userId }, clean, { new: true })
-  return eventOut(e)
-}
-
-export async function deleteEvent(userId, eventId) {
-  const r = await Event.deleteOne({ _id: eventId, user: userId })
-  return r.deletedCount > 0
-}
-
-export async function approveAll(userId, courseId) {
-  await Event.updateMany({ course: courseId, user: userId }, { approved: true })
-  return eventsForCourse(userId, courseId)
-}
-
-// --- provider tokens (stored on the user) ---
-export async function saveTokens(userId, provider, tok) {
-  await User.updateOne({ _id: userId }, { [provider]: tok })
-  return tok
-}
-export async function getTokens(userId, provider) {
-  const u = await User.findById(userId).select(provider)
-  return u?.[provider] || null
-}
+// --- delegated API (identical signatures across both backends) ---
+export const findUserByEmail = (...a) => impl.findUserByEmail(...a)
+export const createUser = (...a) => impl.createUser(...a)
+export const getUserById = (...a) => impl.getUserById(...a)
+export const createCourse = (...a) => impl.createCourse(...a)
+export const setCourseStatus = (...a) => impl.setCourseStatus(...a)
+export const getCourse = (...a) => impl.getCourse(...a)
+export const setCourseName = (...a) => impl.setCourseName(...a)
+export const addEvents = (...a) => impl.addEvents(...a)
+export const eventsForCourse = (...a) => impl.eventsForCourse(...a)
+export const approvedEventsForCourse = (...a) => impl.approvedEventsForCourse(...a)
+export const updateEvent = (...a) => impl.updateEvent(...a)
+export const deleteEvent = (...a) => impl.deleteEvent(...a)
+export const approveAll = (...a) => impl.approveAll(...a)
+export const saveTokens = (...a) => impl.saveTokens(...a)
+export const getTokens = (...a) => impl.getTokens(...a)

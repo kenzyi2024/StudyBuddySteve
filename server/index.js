@@ -4,7 +4,6 @@ import dotenv from 'dotenv'
 import multer from 'multer'
 import cookieParser from 'cookie-parser'
 
-import { connectMongo } from './lib/db.js'
 import { buildICS } from './lib/ics.js'
 import * as store from './lib/store.js'
 import { parseSyllabus } from './lib/parserClient.js'
@@ -47,7 +46,12 @@ const upload = multer({
 //  Health
 // ------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
-  res.json({ ok: true, service: 'study-buddy-steve-gateway', steve: 'hungry' })
+  res.json({
+    ok: true,
+    service: 'study-buddy-steve-gateway',
+    steve: 'hungry',
+    store: store.storeMode(), // 'mongo' (persistent) or 'memory' (dev fallback)
+  })
 })
 
 // ------------------------------------------------------------------
@@ -241,15 +245,9 @@ app.post('/api/courses/:id/sync/:provider', requireAuth, async (req, res) => {
 // ------------------------------------------------------------------
 //  Boot: connect DB first, then listen.
 // ------------------------------------------------------------------
-connectMongo()
-  .then(() => {
-    app.listen(PORT, () => {
-      // eslint-disable-next-line no-console
-      console.log(`▸ Steve's gateway listening on http://localhost:${PORT}`)
-    })
-  })
-  .catch((err) => {
+store.initStore().then((mode) => {
+  app.listen(PORT, () => {
     // eslint-disable-next-line no-console
-    console.error('✖ Could not start — MongoDB connection failed:\n ', err.message)
-    process.exit(1)
+    console.log(`▸ Steve's gateway listening on http://localhost:${PORT}  [store: ${mode}]`)
   })
+})

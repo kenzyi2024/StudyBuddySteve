@@ -24,7 +24,7 @@ function iconFor(name) {
   return FileType2
 }
 
-export default function UploadZone({ onComplete }) {
+export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
   const inputRef = useRef(null)
   const [dragging, setDragging] = useState(false)
   const [files, setFiles] = useState([])
@@ -69,6 +69,11 @@ export default function UploadZone({ onComplete }) {
   // status. If anything fails (backend offline), fall back to the demo.
   const startProcessing = useCallback(async () => {
     if (!files.length) return
+    // Parsing persists to the user's account — require login first.
+    if (!authed) {
+      onNeedAuth?.()
+      return
+    }
     setPhaseIndex(0)
     try {
       const { jobId } = await uploadSyllabus(files[0])
@@ -80,11 +85,17 @@ export default function UploadZone({ onComplete }) {
         () => onComplete?.({ courseId: job.jobId, events: job.events || [] }),
         700,
       )
-    } catch {
+    } catch (err) {
+      // Session expired mid-flight -> back to the login modal.
+      if (err?.status === 401) {
+        setPhaseIndex(-1)
+        onNeedAuth?.()
+        return
+      }
       // Backend not reachable — keep the experience alive with the demo timeline.
       runSimulated()
     }
-  }, [files, onComplete, runSimulated])
+  }, [files, authed, onNeedAuth, onComplete, runSimulated])
 
   const phase = PHASES[phaseIndex]
 

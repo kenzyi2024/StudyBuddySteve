@@ -1,11 +1,13 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { Calendar, ScanLine, Sparkles, Github } from 'lucide-react'
+import { Calendar, ScanLine, Sparkles, Github, LogOut } from 'lucide-react'
 import Steve from './components/Steve.jsx'
 import RetroButton from './components/RetroButton.jsx'
 import UploadZone from './components/UploadZone.jsx'
 import PixelWipe from './components/PixelWipe.jsx'
 import Dashboard from './components/dashboard/Dashboard.jsx'
+import AuthModal from './components/AuthModal.jsx'
+import { me, logout } from './lib/api.js'
 
 const FEATURES = [
   {
@@ -33,19 +35,34 @@ export default function App() {
   const [screen, setScreen] = useState('upload') // 'upload' | 'dashboard'
   // Result handed up by UploadZone: { courseId, events }. null courseId = demo.
   const [parsed, setParsed] = useState({ courseId: null, events: null })
+  const [user, setUser] = useState(null)
+  const [authOpen, setAuthOpen] = useState(false)
 
-  // Screen change under cover of a pixel wipe: trigger the wipe, swap the
-  // screen while the color blocks fully cover the viewport (~mid-animation),
-  // then let the wipe finish and unmount.
+  // Restore any existing session on load (ignores failure / offline).
+  useEffect(() => {
+    me()
+      .then((r) => setUser(r.user))
+      .catch(() => {})
+  }, [])
+
   const transitionTo = (next) => {
     setWipe(true)
     window.setTimeout(() => setScreen(next), 520)
   }
 
-  // Called by UploadZone once Steve finishes "digesting".
   const handleParsed = (result) => {
     setParsed(result || { courseId: null, events: null })
     transitionTo('dashboard')
+  }
+
+  const doLogout = async () => {
+    try {
+      await logout()
+    } catch {
+      /* ignore */
+    }
+    setUser(null)
+    if (screen === 'dashboard') transitionTo('upload')
   }
 
   return (
@@ -54,6 +71,15 @@ export default function App() {
       <AnimatePresence>
         {wipe && <PixelWipe onFinished={() => setWipe(false)} />}
       </AnimatePresence>
+
+      <AuthModal
+        open={authOpen}
+        onClose={() => setAuthOpen(false)}
+        onAuthed={(u) => {
+          setUser(u)
+          setAuthOpen(false)
+        }}
+      />
 
       {screen === 'dashboard' && (
         <Dashboard
@@ -77,13 +103,21 @@ export default function App() {
               STUDY BUDDY <span className="text-magenta">STEVE</span>
             </span>
           </div>
-          <nav className="hidden sm:flex items-center gap-2">
-            <RetroButton color="cyan" size="sm">
-              How It Works
-            </RetroButton>
-            <RetroButton color="magenta" size="sm">
-              Log In
-            </RetroButton>
+          <nav className="hidden sm:flex items-center gap-3">
+            {user ? (
+              <>
+                <span className="font-mono text-lg text-cyan truncate max-w-[180px]">
+                  ▸ {user.name || user.email}
+                </span>
+                <RetroButton color="magenta" size="sm" onClick={doLogout}>
+                  <LogOut size={14} /> Log Out
+                </RetroButton>
+              </>
+            ) : (
+              <RetroButton color="magenta" size="sm" onClick={() => setAuthOpen(true)}>
+                Log In
+              </RetroButton>
+            )}
           </nav>
         </div>
       </header>
@@ -173,7 +207,11 @@ export default function App() {
               watch Steve do his thing ▾
             </p>
           </div>
-          <UploadZone onComplete={handleParsed} />
+          <UploadZone
+            onComplete={handleParsed}
+            authed={!!user}
+            onNeedAuth={() => setAuthOpen(true)}
+          />
         </section>
 
         {/* ---------- HOW IT WORKS ---------- */}

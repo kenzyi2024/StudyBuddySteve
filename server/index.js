@@ -2,10 +2,20 @@ import express from 'express'
 import cors from 'cors'
 import dotenv from 'dotenv'
 import multer from 'multer'
+import cookieParser from 'cookie-parser'
 
+import { connectMongo } from './lib/db.js'
 import { buildICS } from './lib/ics.js'
 import * as store from './lib/store.js'
 import { parseSyllabus } from './lib/parserClient.js'
+import {
+  hashPassword,
+  verifyPassword,
+  issueSession,
+  clearSession,
+  attachUser,
+  requireAuth,
+} from './lib/auth.js'
 import {
   PROVIDERS,
   isConfigured,
@@ -20,104 +30,143 @@ import { pushEvents } from './lib/calendarSync.js'
 dotenv.config()
 
 const app = express()
-app.use(cors())
-app.use(express.json())
-
 const PORT = process.env.PORT || 4000
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
 
-// Keep uploads in memory; forward straight to the Python parser.
+app.use(cors({ origin: FRONTEND_URL, credentials: true }))
+app.use(express.json())
+app.use(cookieParser())
+app.use(attachUser) // populates req.userId when a valid session cookie exists
+
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 20 * 1024 * 1024 }, // 20 MB
+  limits: { fileSize: 20 * 1024 * 1024 },
 })
 
-// --- health ---
+// ------------------------------------------------------------------
+//  Health
+// ------------------------------------------------------------------
 app.get('/api/health', (_req, res) => {
   res.json({ ok: true, service: 'study-buddy-steve-gateway', steve: 'hungry' })
 })
 
-// --- upload a syllabus: create a course, parse it, store the events ---
-app.post('/api/uploads', upload.single('file'), async (req, res) => {
+// ------------------------------------------------------------------
+//  Auth
+// ------------------------------------------------------------------
+const publicUser = (u) => ({ id: String(u._id), email: u.email, name: u.name || '' })
+
+app.post('/api/auth/register', async (req, res) => {
+  const { email, password, name } = req.body || {}
+  if (!email || !password || password.length < 8) {
+    return res.status(400).json({ error: 'Email and a password of 8+ characters are required' })
+  }
+  if (await store.findUserByEmail(email)) {
+    return res.status(409).json({ error: 'An account with that email already exists' })
+  }
+  const user = await store.createUser({ email, name, passwordHash: await hashPassword(password) })
+  issueSession(res, user._id)
+  res.status(201).json({ user: publicUser(user) })
+})
+
+app.post('/api/auth/login', async (req, res) => {
+  const { email, password } = req.body || {}
+  const user = await store.findUserByEmail(email || '')
+  if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
+    return res.status(401).json({ error: 'Invalid email or password' })
+  }
+  issueSession(res, user._id)
+  res.json({ user: publicUser(user) })
+})
+
+app.post('/api/auth/logout', (_req, res) => {
+  clearSession(res)
+  res.json({ ok: true })
+})
+
+app.get('/api/auth/me', async (req, res) => {
+  if (!req.userId) return res.json({ user: null })
+  const user = await store.getUserById(req.userId)
+  res.json({ user: user ? publicUser(user) : null })
+})
+
+// ------------------------------------------------------------------
+//  Uploads & parsing (auth-scoped)
+// ------------------------------------------------------------------
+app.post('/api/uploads', requireAuth, upload.single('file'), async (req, res) => {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded (field name: "file")' })
 
-  const course = store.createCourse({
+  const course = await store.createCourse(req.userId, {
     name: req.body.course || 'Untitled Course',
     term: req.body.term || '',
     file: { filename: req.file.originalname, mime: req.file.mimetype },
   })
 
-  // Respond immediately with the job; parse asynchronously.
   res.status(202).json({ jobId: course.id, status: 'eating' })
 
   try {
-    store.setCourseStatus(course.id, 'scanning')
+    await store.setCourseStatus(req.userId, course.id, 'scanning')
     const result = await parseSyllabus(req.file.buffer, req.file.originalname, req.file.mimetype)
-    if (result.course && !req.body.course) course.name = result.course
-    store.addEvents(course.id, result.events || [])
-    store.setCourseStatus(course.id, 'done')
+    if (result.course && !req.body.course) await store.setCourseName(req.userId, course.id, result.course)
+    await store.addEvents(req.userId, course.id, result.events || [])
+    await store.setCourseStatus(req.userId, course.id, 'done')
   } catch (err) {
     // eslint-disable-next-line no-console
     console.error('parse failed:', err.message)
-    store.setCourseStatus(course.id, 'error')
+    await store.setCourseStatus(req.userId, course.id, 'error')
   }
 })
 
-// --- poll parse status + events ---
-app.get('/api/jobs/:id', (req, res) => {
-  const course = store.getCourse(req.params.id)
+app.get('/api/jobs/:id', requireAuth, async (req, res) => {
+  const course = await store.getCourse(req.userId, req.params.id)
   if (!course) return res.status(404).json({ error: 'Unknown job' })
   res.json({
     jobId: course.id,
     status: course.parseStatus,
     course: course.name,
-    events: store.eventsForCourse(course.id),
+    events: await store.eventsForCourse(req.userId, course.id),
   })
 })
 
-// --- list events for a course ---
-app.get('/api/courses/:id/events', (req, res) => {
-  if (!store.getCourse(req.params.id)) return res.status(404).json({ error: 'Unknown course' })
-  res.json({ events: store.eventsForCourse(req.params.id) })
+app.get('/api/courses/:id/events', requireAuth, async (req, res) => {
+  if (!(await store.getCourse(req.userId, req.params.id)))
+    return res.status(404).json({ error: 'Unknown course' })
+  res.json({ events: await store.eventsForCourse(req.userId, req.params.id) })
 })
 
-// --- edit a single event ---
-app.patch('/api/events/:id', (req, res) => {
-  const allowed = ['title', 'course', 'type', 'due', 'allDay', 'approved']
-  const patch = {}
-  for (const k of allowed) if (k in req.body) patch[k] = req.body[k]
-  const updated = store.updateEvent(req.params.id, patch)
+app.patch('/api/events/:id', requireAuth, async (req, res) => {
+  const updated = await store.updateEvent(req.userId, req.params.id, req.body || {})
   if (!updated) return res.status(404).json({ error: 'Unknown event' })
   res.json({ event: updated })
 })
 
-// --- delete an event ---
-app.delete('/api/events/:id', (req, res) => {
-  const ok = store.deleteEvent(req.params.id)
+app.delete('/api/events/:id', requireAuth, async (req, res) => {
+  const ok = await store.deleteEvent(req.userId, req.params.id)
   res.status(ok ? 204 : 404).end()
 })
 
-// --- approve all events in a course ---
-app.post('/api/courses/:id/approve', (req, res) => {
-  if (!store.getCourse(req.params.id)) return res.status(404).json({ error: 'Unknown course' })
-  const events = store.approveAll(req.params.id)
+app.post('/api/courses/:id/approve', requireAuth, async (req, res) => {
+  if (!(await store.getCourse(req.userId, req.params.id)))
+    return res.status(404).json({ error: 'Unknown course' })
+  const events = await store.approveAll(req.userId, req.params.id)
   res.json({ approved: events.length, events })
 })
 
-// --- universal .ics (download or subscription) ---
-// ?all=1 exports every event; default exports only approved events.
-app.get('/api/courses/:id/calendar.ics', (req, res) => {
-  const course = store.getCourse(req.params.id)
+// ------------------------------------------------------------------
+//  Universal .ics (auth-scoped)
+// ------------------------------------------------------------------
+app.get('/api/courses/:id/calendar.ics', requireAuth, async (req, res) => {
+  const course = await store.getCourse(req.userId, req.params.id)
   if (!course) return res.status(404).json({ error: 'Unknown course' })
 
   const all = req.query.all === '1'
-  const events = store.eventsForCourse(course.id).filter((e) => all || e.approved)
+  const events = all
+    ? await store.eventsForCourse(req.userId, course.id)
+    : await store.approvedEventsForCourse(req.userId, course.id)
 
   const ics = buildICS(events, {
     calName: course.name || 'Study Buddy Steve',
     reminderMinutes: Number(req.query.reminder) || 60,
   })
-
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
   res.setHeader(
     'Content-Disposition',
@@ -127,59 +176,40 @@ app.get('/api/courses/:id/calendar.ics', (req, res) => {
 })
 
 // ------------------------------------------------------------------
-//  OAuth calendar sync (Google Calendar + Outlook / Microsoft Graph)
+//  OAuth calendar sync (auth-scoped; userId travels in signed state)
 // ------------------------------------------------------------------
-
-// Which providers have credentials configured (frontend can hide the rest).
 app.get('/api/oauth/status', (_req, res) => {
-  res.json({
-    google: isConfigured('google'),
-    outlook: isConfigured('outlook'),
-  })
+  res.json({ google: isConfigured('google'), outlook: isConfigured('outlook') })
 })
 
-// 1) Begin OAuth. ?courseId=... rides along in signed state so the callback
-//    knows which course to sync.
-app.get('/api/oauth/:provider', (req, res) => {
+app.get('/api/oauth/:provider', requireAuth, (req, res) => {
   const { provider } = req.params
   if (!PROVIDERS[provider]) return res.status(404).send('Unknown provider')
-  if (!isConfigured(provider)) {
-    return res
-      .status(503)
-      .send(`${provider} OAuth not configured. See OAUTH_SETUP.md and set the client id/secret.`)
-  }
-  const state = encodeState({ provider, courseId: req.query.courseId || null })
+  if (!isConfigured(provider))
+    return res.status(503).send(`${provider} OAuth not configured. See OAUTH_SETUP.md.`)
+  const state = encodeState({ provider, userId: req.userId, courseId: req.query.courseId || null })
   res.redirect(buildAuthUrl(provider, state))
 })
 
-// 2) OAuth callback: exchange the code, store tokens, push approved events,
-//    then bounce back to the frontend with a result the UI can toast.
 app.get('/api/oauth/:provider/callback', async (req, res) => {
   const { provider } = req.params
   const { code, state, error } = req.query
-
-  const back = (params) =>
-    res.redirect(`${FRONTEND_URL}/?${new URLSearchParams(params)}`)
+  const back = (params) => res.redirect(`${FRONTEND_URL}/?${new URLSearchParams(params)}`)
 
   if (error) return back({ synced: provider, status: 'denied' })
-  if (!PROVIDERS[provider] || !code) return back({ synced: provider, status: 'error' })
-
   const decoded = decodeState(state)
-  if (!decoded || decoded.provider !== provider) {
+  if (!PROVIDERS[provider] || !code || !decoded || decoded.provider !== provider) {
     return back({ synced: provider, status: 'bad_state' })
   }
 
   try {
     const tok = await exchangeCode(provider, code)
-    store.saveTokens(provider, tok)
+    await store.saveTokens(decoded.userId, provider, tok)
 
     let created = 0
-    if (decoded.courseId && store.getCourse(decoded.courseId)) {
-      const approved = store.eventsForCourse(decoded.courseId).filter((e) => e.approved)
-      if (approved.length) {
-        const result = await pushEvents(provider, tok.accessToken, approved)
-        created = result.created
-      }
+    if (decoded.courseId) {
+      const approved = await store.approvedEventsForCourse(decoded.userId, decoded.courseId)
+      if (approved.length) created = (await pushEvents(provider, tok.accessToken, approved)).created
     }
     return back({ synced: provider, status: 'ok', count: String(created) })
   } catch (e) {
@@ -189,28 +219,37 @@ app.get('/api/oauth/:provider/callback', async (req, res) => {
   }
 })
 
-// 3) Manual re-sync for an already-connected provider (refreshes token if stale).
-app.post('/api/courses/:id/sync/:provider', async (req, res) => {
+app.post('/api/courses/:id/sync/:provider', requireAuth, async (req, res) => {
   const { id, provider } = req.params
   if (!PROVIDERS[provider]) return res.status(404).json({ error: 'Unknown provider' })
-  if (!store.getCourse(id)) return res.status(404).json({ error: 'Unknown course' })
+  if (!(await store.getCourse(req.userId, id))) return res.status(404).json({ error: 'Unknown course' })
 
-  let tok = store.getTokens(provider)
+  let tok = await store.getTokens(req.userId, provider)
   if (!tok) return res.status(401).json({ error: `Not connected to ${provider}` })
 
   try {
     if (tok.expiry && tok.expiry < Date.now() && tok.refreshToken) {
-      tok = store.saveTokens(provider, await refreshAccessToken(provider, tok.refreshToken))
+      tok = await store.saveTokens(req.userId, provider, await refreshAccessToken(provider, tok.refreshToken))
     }
-    const approved = store.eventsForCourse(id).filter((e) => e.approved)
-    const result = await pushEvents(provider, tok.accessToken, approved)
-    res.json({ provider, ...result })
+    const approved = await store.approvedEventsForCourse(req.userId, id)
+    res.json({ provider, ...(await pushEvents(provider, tok.accessToken, approved)) })
   } catch (e) {
     res.status(502).json({ error: e.message })
   }
 })
 
-app.listen(PORT, () => {
-  // eslint-disable-next-line no-console
-  console.log(`▸ Steve's gateway listening on http://localhost:${PORT}`)
-})
+// ------------------------------------------------------------------
+//  Boot: connect DB first, then listen.
+// ------------------------------------------------------------------
+connectMongo()
+  .then(() => {
+    app.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(`▸ Steve's gateway listening on http://localhost:${PORT}`)
+    })
+  })
+  .catch((err) => {
+    // eslint-disable-next-line no-console
+    console.error('✖ Could not start — MongoDB connection failed:\n ', err.message)
+    process.exit(1)
+  })

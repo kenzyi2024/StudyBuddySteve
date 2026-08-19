@@ -9,14 +9,19 @@ import { motion } from 'framer-motion'
  *   size — pixel width (height scales)
  */
 export default function Steve({ mood = 'idle', size = 220 }) {
-  // Eyes change shape with mood
+  const safeMood = ['idle', 'happy', 'eating', 'scanning', 'done'].includes(mood)
+    ? mood
+    : 'idle'
+
+  // Eyes change shape with mood. Values are always defined (fixes the SVG
+  // "undefined" attribute warnings from animating bare attributes).
   const eyes = {
-    idle: { ry: 10, y: 46 },
-    happy: { ry: 4, y: 48 },
-    eating: { ry: 12, y: 44 },
-    scanning: { ry: 2, y: 48 },
-    done: { ry: 4, y: 48 },
-  }[mood]
+    idle: { ry: 10, cy: 46 },
+    happy: { ry: 4, cy: 48 },
+    eating: { ry: 12, cy: 44 },
+    scanning: { ry: 2, cy: 48 },
+    done: { ry: 4, cy: 48 },
+  }[safeMood]
 
   const mouth = {
     idle: 'M 44 66 Q 60 72 76 66',
@@ -24,7 +29,7 @@ export default function Steve({ mood = 'idle', size = 220 }) {
     eating: 'M 44 60 Q 60 88 76 60 Q 60 74 44 60', // open, chomping
     scanning: 'M 46 68 L 74 68',
     done: 'M 42 64 Q 60 82 78 64',
-  }[mood]
+  }[safeMood]
 
   const screenGlow = mood === 'scanning' ? '#22e0ff' : mood === 'done' ? '#b8ff2e' : '#4dffb8'
 
@@ -60,7 +65,7 @@ export default function Steve({ mood = 'idle', size = 220 }) {
         />
 
         {/* scanning laser bar */}
-        {mood === 'scanning' && (
+        {safeMood === 'scanning' && (
           <motion.rect
             x="24" width="72" height="4" fill="#22e0ff"
             initial={{ y: 30 }}
@@ -69,23 +74,21 @@ export default function Steve({ mood = 'idle', size = 220 }) {
           />
         )}
 
-        {/* face on the screen */}
-        <g>
-          {/* eyes */}
-          <motion.ellipse
-            cx="46" rx="8"
-            animate={{ ry: eyes.ry, cy: eyes.y }}
-            fill="#4dffb8"
+        {/* face on the screen — static per-mood values with a CSS transition
+            for smoothness. (Animating SVG attributes via Framer directly can
+            emit "undefined" intermediate values, so we avoid that here.) */}
+        <g style={{ transition: 'all 0.25s ease' }}>
+          <ellipse
+            cx="46" rx="8" ry={eyes.ry} cy={eyes.cy} fill="#4dffb8"
+            style={{ transition: 'ry 0.2s ease, cy 0.2s ease' }}
           />
-          <motion.ellipse
-            cx="74" rx="8"
-            animate={{ ry: eyes.ry, cy: eyes.y }}
-            fill="#4dffb8"
+          <ellipse
+            cx="74" rx="8" ry={eyes.ry} cy={eyes.cy} fill="#4dffb8"
+            style={{ transition: 'ry 0.2s ease, cy 0.2s ease' }}
           />
-          {/* mouth */}
-          <motion.path
-            animate={{ d: mouth }}
-            fill={mood === 'eating' ? '#ff2e97' : 'none'}
+          <path
+            d={mouth}
+            fill={safeMood === 'eating' ? '#ff2e97' : 'none'}
             stroke="#4dffb8"
             strokeWidth="3"
             strokeLinecap="round"

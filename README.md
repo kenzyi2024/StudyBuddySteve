@@ -39,8 +39,13 @@ npm run dev          # http://localhost:5173
 ## Quick start (full stack)
 
 ```bash
-# 1. Frontend
-npm install && npm run dev
+# 0. Config — copy and fill in (MONGODB_URI + JWT_SECRET are required)
+cp .env.example .env
+
+# 1. MongoDB — REQUIRED (accounts + events persist here)
+#    Local:  brew install mongodb-community && brew services start mongodb-community
+#    or set MONGODB_URI to a free MongoDB Atlas cluster.
+#    The gateway refuses to start if it can't reach the DB.
 
 # 2. API gateway
 cd server && npm install && npm run dev      # http://localhost:4000
@@ -50,11 +55,15 @@ cd ai-parser && python -m venv .venv && source .venv/bin/activate
 pip install -r requirements.txt
 uvicorn main:app --reload --port 8000        # http://localhost:8000
 
-# 4. MongoDB
-#    Run locally (mongod) or point MONGODB_URI at Atlas.
+# 4. Frontend
+npm install && npm run dev                   # http://localhost:5173
 ```
 
-Copy `.env.example` → `.env` and fill in OAuth + DB values.
+**Accounts:** the app now has per-user auth. Click **Log In** (or hit Parse) to
+register — accounts, parsed events, and calendar tokens are stored in MongoDB and
+scoped per user. Sessions use an httpOnly JWT cookie.
+
+See `OAUTH_SETUP.md` for calendar-sync credentials and the optional LLM key.
 
 ## Tech stack
 

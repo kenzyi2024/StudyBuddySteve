@@ -2,46 +2,58 @@ import mongoose from 'mongoose'
 
 const { Schema, model } = mongoose
 
+// OAuth token subdocument (per provider, per user).
+const TokenSchema = new Schema(
+  {
+    accessToken: String,
+    refreshToken: String,
+    expiry: Number, // epoch ms
+  },
+  { _id: false },
+)
+
 // A user of the app.
 const UserSchema = new Schema(
   {
-    email: { type: String, required: true, unique: true, index: true },
+    email: { type: String, required: true, unique: true, index: true, lowercase: true, trim: true },
     name: String,
-    // OAuth tokens for calendar providers (encrypt at rest in production)
-    google: { accessToken: String, refreshToken: String, expiry: Date },
-    outlook: { accessToken: String, refreshToken: String, expiry: Date },
+    passwordHash: { type: String, required: true },
+    // OAuth tokens for calendar providers (stored per-user).
+    google: TokenSchema,
+    outlook: TokenSchema,
   },
   { timestamps: true },
 )
 
-// A single parsed calendar event (assignment / exam / deadline).
-const EventSchema = new Schema(
-  {
-    course: { type: Schema.Types.ObjectId, ref: 'Course', index: true },
-    title: { type: String, required: true },
-    type: { type: String, enum: ['assignment', 'exam', 'quiz', 'reading', 'other'], default: 'other' },
-    due: { type: Date, required: true },
-    allDay: { type: Boolean, default: false },
-    notes: String,
-    // Provenance: where in the syllabus this was extracted from + confidence
-    source: { page: Number, snippet: String, confidence: Number },
-    approved: { type: Boolean, default: false },
-  },
-  { timestamps: true },
-)
-
-// A course, tied to an uploaded syllabus.
+// A course, tied to an uploaded syllabus and owned by a user.
 const CourseSchema = new Schema(
   {
-    user: { type: Schema.Types.ObjectId, ref: 'User', index: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     name: { type: String, required: true }, // e.g. "CS 101"
     term: String, // e.g. "Fall 2026"
-    syllabusFile: { filename: String, storageKey: String, mime: String },
+    file: { filename: String, mime: String },
     parseStatus: {
       type: String,
       enum: ['queued', 'eating', 'scanning', 'done', 'error'],
       default: 'queued',
     },
+  },
+  { timestamps: true },
+)
+
+// A single parsed calendar event.
+const EventSchema = new Schema(
+  {
+    course: { type: Schema.Types.ObjectId, ref: 'Course', required: true, index: true },
+    user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
+    title: { type: String, required: true },
+    courseName: String, // denormalized label for display
+    type: { type: String, enum: ['assignment', 'exam', 'quiz', 'reading', 'other'], default: 'other' },
+    due: { type: Date, required: true },
+    allDay: { type: Boolean, default: false },
+    approved: { type: Boolean, default: false },
+    confidence: Number,
+    source: { page: Number, snippet: String, method: String },
   },
   { timestamps: true },
 )

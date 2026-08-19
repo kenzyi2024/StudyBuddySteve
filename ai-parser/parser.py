@@ -215,10 +215,42 @@ def extract_events(text: str) -> list[dict]:
     return events
 
 
-def parse_text(text: str) -> dict:
+def _merge_events(fast: list[dict], smart: list[dict]) -> list[dict]:
+    """Combine fast-path and LLM events, deduping on (title, date) and keeping
+    whichever has the higher confidence."""
+    by_key: dict[tuple[str, str], dict] = {}
+    for e in fast + smart:
+        key = (e["title"].lower().strip(), e["due"][:10])
+        existing = by_key.get(key)
+        if existing is None or e.get("confidence", 0) > existing.get("confidence", 0):
+            by_key[key] = e
+    merged = list(by_key.values())
+    merged.sort(key=lambda e: e["due"])
+    return merged
+
+
+def parse_text(text: str, use_llm: bool = True) -> dict:
+    term = find_term(text)
+    base_year = int(term.split()[-1]) if term else None
+
+    events = extract_events(text)
+
+    # Smart path: only worth an LLM round-trip when the text actually contains
+    # relative-date phrasing the regex layer can't resolve. Env-gated + safe.
+    llm_used = False
+    if use_llm:
+        from llm import smart_available, has_relative_dates, extract_events_llm
+
+        if smart_available() and has_relative_dates(text):
+            smart = extract_events_llm(text, term, base_year)
+            if smart:
+                events = _merge_events(events, smart)
+                llm_used = True
+
     return {
         "course": find_course(text),
-        "term": find_term(text),
+        "term": term,
         "parsedAt": datetime.utcnow().isoformat(),
-        "events": extract_events(text),
+        "smartPath": llm_used,
+        "events": events,
     }

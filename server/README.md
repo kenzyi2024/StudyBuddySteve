@@ -19,11 +19,15 @@ GET    /api/jobs/:id                 # poll parse status (eating|scanning|done|e
 GET    /api/courses/:id/events       # list extracted events
 PATCH  /api/events/:id               # edit a single event
 POST   /api/courses/:id/approve      # lock in the reviewed calendar
-GET    /api/oauth/google             # begin Google OAuth
-GET    /api/oauth/google/callback
-POST   /api/courses/:id/sync/google  # push approved events to Google Calendar
+GET    /api/oauth/status             # which providers are configured
+GET    /api/oauth/:provider          # begin OAuth (google|outlook), ?courseId=
+GET    /api/oauth/:provider/callback # exchange code, push approved events, redirect back
+POST   /api/courses/:id/sync/:provider # manual re-sync (refreshes token if stale)
 GET    /api/courses/:id/calendar.ics # universal subscription / download
 ```
+
+OAuth credentials come from env — see `../OAUTH_SETUP.md` for step-by-step
+instructions on getting Google and Microsoft keys.
 
 ## Run
 ```bash

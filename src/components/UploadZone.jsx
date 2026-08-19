@@ -3,16 +3,19 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { UploadCloud, FileText, FileImage, FileType2, X } from 'lucide-react'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
+import { uploadSyllabus, pollJob } from '../lib/api.js'
 
 const ACCEPTED = ['.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg']
 
-// Fake processing phases so the UI can be demoed without the backend wired up.
-// In production these transitions are driven by the parsing job status.
+// Processing phases. In live mode these are driven by the backend job status
+// ('eating' | 'scanning' | 'done'); in demo mode (backend offline) they play
+// on a timer so the frontend still shows Steve's whole routine.
 const PHASES = [
   { key: 'eating', label: 'CHOMPING SYLLABUS…', mood: 'eating', color: 'magenta' },
   { key: 'scanning', label: 'LASER-SCANNING DATES…', mood: 'scanning', color: 'cyan' },
   { key: 'done', label: 'DIGESTED! DATES FOUND.', mood: 'done', color: 'lime' },
 ]
+const PHASE_INDEX = { eating: 0, scanning: 1, done: 2, error: 2 }
 
 function iconFor(name) {
   const n = name.toLowerCase()
@@ -44,24 +47,44 @@ export default function UploadZone({ onComplete }) {
     [addFiles],
   )
 
-  // Walk Steve through the eat → scan → done phases.
-  const startProcessing = useCallback(() => {
-    if (!files.length) return
-    setPhaseIndex(0)
+  // Demo fallback: play the eat → scan → done phases on a timer, then finish
+  // with no courseId so the dashboard falls back to seed data.
+  const runSimulated = useCallback(() => {
     const timings = [1600, 2000, 1400]
     let i = 0
+    setPhaseIndex(0)
     const advance = () => {
       i += 1
       if (i < PHASES.length) {
         setPhaseIndex(i)
         setTimeout(advance, timings[i])
       } else {
-        // Hand parsed results back up to the app to trigger the page wipe.
-        setTimeout(() => onComplete?.(files), 700)
+        setTimeout(() => onComplete?.({ courseId: null, events: null }), 700)
       }
     }
     setTimeout(advance, timings[0])
-  }, [files, onComplete])
+  }, [onComplete])
+
+  // Live path: upload the first file, poll the job, drive Steve from real
+  // status. If anything fails (backend offline), fall back to the demo.
+  const startProcessing = useCallback(async () => {
+    if (!files.length) return
+    setPhaseIndex(0)
+    try {
+      const { jobId } = await uploadSyllabus(files[0])
+      const job = await pollJob(jobId, {
+        onPhase: (status) => setPhaseIndex(PHASE_INDEX[status] ?? 0),
+      })
+      // brief beat on the "done" frame before wiping to the dashboard
+      setTimeout(
+        () => onComplete?.({ courseId: job.jobId, events: job.events || [] }),
+        700,
+      )
+    } catch {
+      // Backend not reachable — keep the experience alive with the demo timeline.
+      runSimulated()
+    }
+  }, [files, onComplete, runSimulated])
 
   const phase = PHASES[phaseIndex]
 

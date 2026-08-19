@@ -31,6 +31,8 @@ const FEATURES = [
 export default function App() {
   const [wipe, setWipe] = useState(false)
   const [screen, setScreen] = useState('upload') // 'upload' | 'dashboard'
+  // Result handed up by UploadZone: { courseId, events }. null courseId = demo.
+  const [parsed, setParsed] = useState({ courseId: null, events: null })
 
   // Screen change under cover of a pixel wipe: trigger the wipe, swap the
   // screen while the color blocks fully cover the viewport (~mid-animation),
@@ -41,7 +43,10 @@ export default function App() {
   }
 
   // Called by UploadZone once Steve finishes "digesting".
-  const handleParsed = () => transitionTo('dashboard')
+  const handleParsed = (result) => {
+    setParsed(result || { courseId: null, events: null })
+    transitionTo('dashboard')
+  }
 
   return (
     <div className="min-h-screen relative">
@@ -51,7 +56,11 @@ export default function App() {
       </AnimatePresence>
 
       {screen === 'dashboard' && (
-        <Dashboard onBack={() => transitionTo('upload')} />
+        <Dashboard
+          courseId={parsed.courseId}
+          initialEvents={parsed.events}
+          onBack={() => transitionTo('upload')}
+        />
       )}
 
       {screen === 'upload' && (

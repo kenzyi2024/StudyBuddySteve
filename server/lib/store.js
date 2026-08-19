@@ -6,6 +6,17 @@
 
 const courses = new Map() // courseId -> course
 const events = new Map() // eventId -> event
+const tokens = new Map() // provider -> { accessToken, refreshToken, expiry }
+
+// --- OAuth token store (single-user dev). In production, key by user id and
+// encrypt at rest. ---
+export function saveTokens(provider, tok) {
+  tokens.set(provider, tok)
+  return tok
+}
+export function getTokens(provider) {
+  return tokens.get(provider) || null
+}
 
 let seq = 0
 const id = (p) => `${p}_${Date.now().toString(36)}_${seq++}`

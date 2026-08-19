@@ -8,35 +8,70 @@ import ListView from './ListView.jsx'
 import EventEditor from './EventEditor.jsx'
 import SyncBar from './SyncBar.jsx'
 import { seedEvents } from '../../data/events.js'
+import {
+  patchEvent,
+  deleteEvent as apiDeleteEvent,
+  approveCourse,
+  calendarIcsUrl,
+} from '../../lib/api.js'
 
 /**
  * Dashboard — the review screen. Users toggle between a calendar and list
  * view, edit/approve the events Steve extracted, then sync.
  *
  * Props:
- *   initialEvents — parsed events (defaults to seed data for standalone demo)
+ *   courseId      — live course id from the parser (null = offline demo mode)
+ *   initialEvents — parsed events (falls back to seed data when none provided)
  *   onBack        — return to the upload screen
  */
-export default function Dashboard({ initialEvents, onBack }) {
-  const [events, setEvents] = useState(() => initialEvents ?? seedEvents())
+export default function Dashboard({ courseId = null, initialEvents, onBack }) {
+  const [events, setEvents] = useState(() =>
+    initialEvents && initialEvents.length ? initialEvents : seedEvents(),
+  )
   const [tab, setTab] = useState('calendar') // 'calendar' | 'list'
   const [editing, setEditing] = useState(null)
 
+  const live = !!courseId // when false, mutations stay local-only
+
   const approvedCount = useMemo(() => events.filter((e) => e.approved).length, [events])
 
-  // --- mutations ---
+  // Persist a patch to the gateway when live; ignore failures (UI already
+  // updated optimistically, and demo mode has no backend).
+  const persist = (id, patch) => {
+    if (live) patchEvent(id, patch).catch(() => {})
+  }
+
+  // --- mutations (optimistic; synced when live) ---
   const saveEvent = (updated) => {
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
+    persist(updated.id, {
+      title: updated.title,
+      course: updated.course,
+      type: updated.type,
+      due: updated.due,
+      allDay: updated.allDay,
+    })
     setEditing(null)
   }
   const deleteEvent = (id) => {
     setEvents((prev) => prev.filter((e) => e.id !== id))
+    if (live) apiDeleteEvent(id).catch(() => {})
     setEditing(null)
   }
   const toggleApprove = (id) =>
-    setEvents((prev) => prev.map((e) => (e.id === id ? { ...e, approved: !e.approved } : e)))
+    setEvents((prev) =>
+      prev.map((e) => {
+        if (e.id !== id) return e
+        const next = { ...e, approved: !e.approved }
+        persist(id, { approved: next.approved })
+        return next
+      }),
+    )
 
-  const approveAll = () => setEvents((prev) => prev.map((e) => ({ ...e, approved: true })))
+  const approveAll = () => {
+    setEvents((prev) => prev.map((e) => ({ ...e, approved: true })))
+    if (live) approveCourse(courseId).catch(() => {})
+  }
 
   // drag-to-reschedule: keep the time, change the day
   const reschedule = (id, y, m, d) =>
@@ -44,7 +79,9 @@ export default function Dashboard({ initialEvents, onBack }) {
       prev.map((e) => {
         if (e.id !== id) return e
         const old = new Date(e.due)
-        return { ...e, due: new Date(y, m, d, old.getHours(), old.getMinutes()).toISOString() }
+        const due = new Date(y, m, d, old.getHours(), old.getMinutes()).toISOString()
+        persist(id, { due })
+        return { ...e, due }
       }),
     )
 
@@ -115,7 +152,12 @@ export default function Dashboard({ initialEvents, onBack }) {
         </AnimatePresence>
 
         {/* sync */}
-        <SyncBar approvedCount={approvedCount} totalCount={events.length} />
+        <SyncBar
+          courseId={courseId}
+          approvedCount={approvedCount}
+          totalCount={events.length}
+          icsUrl={courseId ? calendarIcsUrl(courseId) : null}
+        />
       </main>
 
       {/* edit modal */}

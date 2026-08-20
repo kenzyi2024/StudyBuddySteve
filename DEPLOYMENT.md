@@ -34,24 +34,32 @@ block third-party cookies.
 
 ## 2. Backend — Google Cloud Run
 
-**One-time setup**
+**One-time setup.** The easiest environment is **Cloud Shell** (Console → the
+`>_` icon) — gcloud is preinstalled and you're already authenticated. Use an
+**existing project** (creating new ones can hit a quota); note its ID.
+
+**Get the code into Cloud Shell.** Cloud Shell is a fresh VM without your files,
+so `--source ./server` only works after you pull the repo in. Push the repo to
+GitHub, then:
 ```bash
-# install the gcloud CLI, then:
-gcloud auth login
-gcloud projects create study-buddy-steve      # or use an existing project
-# enable billing for the project in the Cloud Console (required for Cloud Run)
+git clone https://github.com/<you>/<repo>.git
+cd <repo>          # run all deploy commands from the repo root
 ```
 
 **Deploy both services** — a script does it in order (parser first, then the
 gateway wired to it):
 ```bash
-export PROJECT_ID=study-buddy-steve
-export MONGODB_URI='mongodb+srv://USER:PASS@cluster0.xxxx.mongodb.net/study_buddy_steve'
+export PROJECT_ID=your-existing-project-id            # e.g. syllabi-calendar-app
+export MONGODB_URI='mongodb+srv://USER:PASS@cluster0.xxxx.mongodb.net/study_buddy_steve?retryWrites=true'
 export JWT_SECRET="$(openssl rand -hex 32)"
-export FRONTEND_URL='https://example.vercel.app'   # update after step 3
+export FRONTEND_URL='https://example.vercel.app'      # NO trailing slash; update after step 3
 # optional: GOOGLE_CLIENT_ID/SECRET, MS_CLIENT_ID/SECRET, ANTHROPIC_API_KEY …
-./deploy-gcloud.sh
+bash deploy-gcloud.sh
 ```
+
+> Include the db name (`/study_buddy_steve`) in `MONGODB_URI` before the `?`,
+> otherwise data lands in the default `test` database. `FRONTEND_URL` must have
+> **no trailing slash** — it has to match the browser's Origin header exactly.
 
 The script enables the needed APIs, deploys `steve-parser`, captures its URL,
 then deploys `steve-gateway` with `PARSER_SERVICE_URL` pointed at it. It prints

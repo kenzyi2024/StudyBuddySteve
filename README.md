@@ -83,3 +83,9 @@ See `OAUTH_SETUP.md` for calendar-sync credentials and the optional LLM key.
 - **Motion:** buttons collapse into their shadow on press; Steve eats → laser-scans → grins; pixel-block screen wipes between routes.
 
 See `ARCHITECTURE.md` for the full picture.
+
+## Deploying
+
+Live deploy = Vercel (frontend) + Google Cloud Run (Node gateway + Python
+parser) + MongoDB Atlas. Run `./deploy-gcloud.sh` for the backend and follow
+`DEPLOYMENT.md` for the full step-by-step.

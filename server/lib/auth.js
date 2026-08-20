@@ -1,7 +1,14 @@
 /**
- * Authentication: password hashing (bcryptjs), stateless sessions via a JWT
- * stored in an httpOnly cookie, and an Express middleware that populates
- * req.userId.
+ * Authentication: password hashing (bcryptjs) and stateless sessions via JWT.
+ *
+ * Two transports are supported so the app works both same-origin and across
+ * domains (Vercel frontend ↔ separately-hosted backend):
+ *   1. Authorization: Bearer <token>  — primary; immune to third-party-cookie
+ *      blocking, so it's what the deployed cross-domain frontend uses.
+ *   2. httpOnly cookie                — convenient for same-origin/local dev.
+ *
+ * A token is also accepted as ?token= for endpoints reached by top-level
+ * navigation or plain links (OAuth start, .ics download) that can't set headers.
  */
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -16,39 +23,55 @@ function secret() {
 export async function hashPassword(plain) {
   return bcrypt.hash(plain, 10)
 }
-
 export async function verifyPassword(plain, hash) {
   return bcrypt.compare(plain, hash)
 }
 
+export function signToken(userId) {
+  return jwt.sign({ uid: String(userId) }, secret(), { expiresIn: '7d' })
+}
+
+// Issue a session: sets the cookie AND returns the raw token for the body.
 export function issueSession(res, userId) {
-  const token = jwt.sign({ uid: String(userId) }, secret(), { expiresIn: '7d' })
+  const token = signToken(userId)
+  // Cross-site cookies require SameSite=None + Secure. Enable in production or
+  // when explicitly configured; use Lax locally so http://localhost works.
+  const crossSite =
+    process.env.COOKIE_SAMESITE === 'none' || process.env.NODE_ENV === 'production'
   res.cookie(COOKIE, token, {
     httpOnly: true,
-    sameSite: 'lax',
-    secure: process.env.NODE_ENV === 'production',
+    sameSite: crossSite ? 'none' : 'lax',
+    secure: crossSite,
     maxAge: MAX_AGE_MS,
   })
+  return token
 }
 
 export function clearSession(res) {
   res.clearCookie(COOKIE)
 }
 
-// Populate req.userId if a valid session cookie is present; never throws.
+function tokenFromRequest(req) {
+  const auth = req.headers?.authorization
+  if (auth && auth.startsWith('Bearer ')) return auth.slice(7)
+  if (req.cookies?.[COOKIE]) return req.cookies[COOKIE]
+  if (req.query?.token) return String(req.query.token)
+  return null
+}
+
+// Populate req.userId if a valid token is present (header, cookie, or query).
 export function attachUser(req, _res, next) {
-  const token = req.cookies?.[COOKIE]
+  const token = tokenFromRequest(req)
   if (token) {
     try {
       req.userId = jwt.verify(token, secret()).uid
     } catch {
-      /* invalid/expired — treat as anonymous */
+      /* invalid/expired — anonymous */
     }
   }
   next()
 }
 
-// Hard gate: 401 unless authenticated.
 export function requireAuth(req, res, next) {
   if (!req.userId) return res.status(401).json({ error: 'Not authenticated' })
   next()

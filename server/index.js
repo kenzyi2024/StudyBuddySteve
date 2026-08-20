@@ -30,12 +30,26 @@ dotenv.config()
 
 const app = express()
 const PORT = process.env.PORT || 4000
-const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:5173'
+// FRONTEND_URL may be a comma-separated allowlist (e.g. prod + preview URLs).
+const FRONTEND_URLS = (process.env.FRONTEND_URL || 'http://localhost:5173')
+  .split(',')
+  .map((s) => s.trim())
+  .filter(Boolean)
+const FRONTEND_URL = FRONTEND_URLS[0]
 
-app.use(cors({ origin: FRONTEND_URL, credentials: true }))
+app.use(
+  cors({
+    origin(origin, cb) {
+      // allow same-origin / curl (no origin) and any allowlisted frontend
+      if (!origin || FRONTEND_URLS.includes(origin)) return cb(null, true)
+      cb(new Error(`Origin ${origin} not allowed by CORS`))
+    },
+    credentials: true,
+  }),
+)
 app.use(express.json())
 app.use(cookieParser())
-app.use(attachUser) // populates req.userId when a valid session cookie exists
+app.use(attachUser) // reads Bearer header / cookie / ?token
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -68,8 +82,8 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(409).json({ error: 'An account with that email already exists' })
   }
   const user = await store.createUser({ email, name, passwordHash: await hashPassword(password) })
-  issueSession(res, user._id)
-  res.status(201).json({ user: publicUser(user) })
+  const token = issueSession(res, user._id)
+  res.status(201).json({ user: publicUser(user), token })
 })
 
 app.post('/api/auth/login', async (req, res) => {
@@ -78,8 +92,8 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
-  issueSession(res, user._id)
-  res.json({ user: publicUser(user) })
+  const token = issueSession(res, user._id)
+  res.json({ user: publicUser(user), token })
 })
 
 app.post('/api/auth/logout', (_req, res) => {

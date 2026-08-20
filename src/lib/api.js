@@ -1,15 +1,42 @@
 /**
  * Thin client for the Study Buddy Steve gateway.
  *
- * All calls hit a relative /api path (Vite proxies it to the Express gateway
- * in dev) and send credentials so the session cookie rides along. Every
- * function throws on non-2xx so callers can handle auth / offline states.
+ * BASE resolves to:
+ *   - dev:  '/api'  (Vite proxies it to the local gateway)
+ *   - prod: VITE_API_BASE, e.g. 'https://your-backend.onrender.com/api'
+ *
+ * Auth uses a bearer token (stored in localStorage) as the primary transport
+ * so sessions survive across domains where third-party cookies are blocked;
+ * cookies still ride along for same-origin dev.
  */
-const BASE = '/api'
+const BASE = (import.meta.env?.VITE_API_BASE || '/api').replace(/\/$/, '')
 
-// fetch wrapper: always include cookies.
+const TOKEN_KEY = 'steve_token'
+let authToken = null
+try {
+  authToken = localStorage.getItem(TOKEN_KEY)
+} catch {
+  /* localStorage unavailable (SSR / privacy mode) */
+}
+
+export function setToken(token) {
+  authToken = token || null
+  try {
+    if (token) localStorage.setItem(TOKEN_KEY, token)
+    else localStorage.removeItem(TOKEN_KEY)
+  } catch {
+    /* ignore */
+  }
+}
+export function getToken() {
+  return authToken
+}
+
+// fetch wrapper: attach bearer token + include cookies.
 function req(path, opts = {}) {
-  return fetch(`${BASE}${path}`, { credentials: 'include', ...opts })
+  const headers = { ...(opts.headers || {}) }
+  if (authToken) headers.Authorization = `Bearer ${authToken}`
+  return fetch(`${BASE}${path}`, { credentials: 'include', ...opts, headers })
 }
 
 async function json(res) {
@@ -32,25 +59,33 @@ export async function me() {
   return json(await req('/auth/me'))
 }
 export async function register({ email, password, name }) {
-  return json(
+  const r = await json(
     await req('/auth/register', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password, name }),
     }),
   )
+  if (r.token) setToken(r.token)
+  return r
 }
 export async function login({ email, password }) {
-  return json(
+  const r = await json(
     await req('/auth/login', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ email, password }),
     }),
   )
+  if (r.token) setToken(r.token)
+  return r
 }
 export async function logout() {
-  return json(await req('/auth/logout', { method: 'POST' }))
+  try {
+    return await json(await req('/auth/logout', { method: 'POST' }))
+  } finally {
+    setToken(null)
+  }
 }
 
 // --- uploads & parsing ---
@@ -100,9 +135,14 @@ export async function approveCourse(courseId) {
 }
 
 // --- calendar sync ---
+// These are reached by top-level navigation / plain links, which can't send an
+// Authorization header — so the token travels as ?token= (backend accepts it).
 export function oauthStartUrl(provider, courseId) {
-  const qs = courseId ? `?courseId=${encodeURIComponent(courseId)}` : ''
-  return `${BASE}/oauth/${provider}${qs}`
+  const qs = new URLSearchParams()
+  if (courseId) qs.set('courseId', courseId)
+  if (authToken) qs.set('token', authToken)
+  const s = qs.toString() ? `?${qs}` : ''
+  return `${BASE}/oauth/${provider}${s}`
 }
 export async function oauthStatus() {
   try {
@@ -115,6 +155,7 @@ export function calendarIcsUrl(courseId, { all = false, reminder } = {}) {
   const qs = new URLSearchParams()
   if (all) qs.set('all', '1')
   if (reminder) qs.set('reminder', String(reminder))
+  if (authToken) qs.set('token', authToken)
   const suffix = qs.toString() ? `?${qs}` : ''
   return `${BASE}/courses/${courseId}/calendar.ics${suffix}`
 }

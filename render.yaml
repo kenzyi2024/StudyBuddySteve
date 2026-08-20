@@ -1,0 +1,3 @@
+# NOTE: This project deploys to Google Cloud Run, not Render.
+# See DEPLOYMENT.md and ./deploy-gcloud.sh. This file is intentionally unused
+# and can be deleted.

@@ -1,9 +1,9 @@
 import { useState } from 'react'
-import { motion } from 'framer-motion'
-import { ChevronLeft, ChevronRight } from 'lucide-react'
+import { AnimatePresence, motion } from 'framer-motion'
+import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import TypeBadge from './TypeBadge.jsx'
-import { MONTHS, WEEKDAYS, monthGrid, sameDay, typeMeta, fmtTime } from '../../data/events.js'
+import { MONTHS, WEEKDAYS, monthGrid, sameDay, typeMeta, fmtTime, courseColors } from '../../data/events.js'
 
 /**
  * CalendarView — chunky retro calendar with Year / Month / Week / Day views.
@@ -20,6 +20,12 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
   )
   const [mode, setMode] = useState('month') // year | month | week | day
   const [dropTarget, setDropTarget] = useState(null)
+  const [peek, setPeek] = useState(null) // {y,m,d} day-detail popover
+
+  // Per-course colors (chips are colored by course; type still shown on badges).
+  const cColors = courseColors(events)
+  const chipColor = (e) => cColors.get(e.course || 'Course')?.hex || typeMeta(e.type).hex
+  const courseList = [...cColors.entries()] // [ [name, {name,hex}], ... ]
 
   const cy = cursor.getUTCFullYear()
   const cm = cursor.getUTCMonth()
@@ -56,30 +62,27 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
     if (id) onReschedule(id, y, m, d)
   }
 
-  // A draggable, clickable event chip.
-  const Chip = ({ e, compact }) => {
-    const meta = typeMeta(e.type)
-    return (
-      <motion.button
-        layout
-        draggable
-        onDragStart={() => (window.__steveDrag = e.id)}
-        onDragEnd={() => (window.__steveDrag = null)}
-        onClick={(ev) => {
-          ev.stopPropagation()
-          onEdit(e)
-        }}
-        whileHover={{ scale: 1.03 }}
-        title={`${e.title} · ${fmtTime(e.due, e.allDay)}`}
-        style={{ backgroundColor: meta.hex }}
-        className={`w-full text-left border-2 border-ink px-1 py-0.5 cursor-grab active:cursor-grabbing
-          font-mono leading-tight text-ink truncate ${compact ? 'text-[13px]' : 'text-sm'}
-          ${e.done ? 'line-through opacity-70' : ''}`}
-      >
-        {e.title}
-      </motion.button>
-    )
-  }
+  // A draggable, clickable event chip — colored by course.
+  const Chip = ({ e, compact }) => (
+    <motion.button
+      layout
+      draggable
+      onDragStart={() => (window.__steveDrag = e.id)}
+      onDragEnd={() => (window.__steveDrag = null)}
+      onClick={(ev) => {
+        ev.stopPropagation()
+        onEdit(e)
+      }}
+      whileHover={{ scale: 1.03 }}
+      title={`${e.title} · ${e.course || ''} · ${fmtTime(e.due, e.allDay)}`}
+      style={{ backgroundColor: chipColor(e) }}
+      className={`w-full text-left border-2 border-ink px-1 py-0.5 cursor-grab active:cursor-grabbing
+        font-mono leading-tight text-ink truncate ${compact ? 'text-[13px]' : 'text-sm'}
+        ${e.done ? 'line-through opacity-70' : ''}`}
+    >
+      {e.title}
+    </motion.button>
+  )
 
   const title = {
     year: `${cy}`,
@@ -125,6 +128,18 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
           </RetroButton>
         </div>
       </div>
+
+      {/* course legend */}
+      {courseList.length > 1 && (
+        <div className="flex items-center gap-3 flex-wrap mb-3">
+          {courseList.map(([name, c]) => (
+            <span key={name} className="inline-flex items-center gap-1.5 font-mono text-base text-beige/70">
+              <span className="w-3 h-3 border-2 border-ink" style={{ backgroundColor: c.hex }} />
+              {name}
+            </span>
+          ))}
+        </div>
+      )}
 
       {/* ---- YEAR ---- */}
       {mode === 'year' && (
@@ -172,7 +187,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
               return (
                 <div
                   key={key}
-                  onClick={() => goToDay(cell.y, cell.m, cell.d)}
+                  onClick={() => setPeek({ y: cell.y, m: cell.m, d: cell.d })}
                   onDragOver={(e) => {
                     e.preventDefault()
                     setDropTarget(key)
@@ -195,7 +210,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
                       <button
                         onClick={(ev) => {
                           ev.stopPropagation()
-                          goToDay(cell.y, cell.m, cell.d)
+                          setPeek({ y: cell.y, m: cell.m, d: cell.d })
                         }}
                         className="font-mono text-sm text-cyan px-1 hover:text-lime"
                       >
@@ -251,6 +266,77 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
           })}
         </div>
       )}
+
+      {/* ---- DAY-PEEK POPOVER (from month view) ---- */}
+      <AnimatePresence>
+        {peek && (
+          <motion.div
+            className="fixed inset-0 z-[80] grid place-items-center p-4 bg-ink/60 backdrop-blur-sm"
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            exit={{ opacity: 0 }}
+            onClick={() => setPeek(null)}
+          >
+            <motion.div
+              initial={{ scale: 0.9, y: 12 }}
+              animate={{ scale: 1, y: 0 }}
+              exit={{ scale: 0.9, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 320, damping: 24 }}
+              onClick={(e) => e.stopPropagation()}
+              className="retro-panel noise w-full max-w-sm p-4 shadow-chunk-lg"
+            >
+              <div className="flex items-center justify-between mb-3">
+                <h4 className="font-pixel text-xs text-beige">
+                  {WEEKDAYS[new Date(Date.UTC(peek.y, peek.m, peek.d)).getUTCDay()]}, {MONTHS[peek.m]}{' '}
+                  {peek.d}
+                </h4>
+                <button onClick={() => setPeek(null)} className="text-magenta hover:text-lime" aria-label="Close">
+                  <X size={20} />
+                </button>
+              </div>
+
+              <div className="space-y-2 max-h-[50vh] overflow-y-auto">
+                {dayEvents(peek.y, peek.m, peek.d).length ? (
+                  dayEvents(peek.y, peek.m, peek.d).map((e) => (
+                    <button
+                      key={e.id}
+                      onClick={() => {
+                        onEdit(e)
+                        setPeek(null)
+                      }}
+                      className={`w-full flex items-center gap-2 border-3 border-ink bg-void p-2 text-left hover:bg-dusk transition-colors ${e.done ? 'opacity-60' : ''}`}
+                    >
+                      <span className="w-2.5 h-2.5 border-2 border-ink shrink-0" style={{ backgroundColor: chipColor(e) }} />
+                      <span className="font-mono text-base text-cyan w-16 shrink-0">
+                        {fmtTime(e.due, e.allDay)}
+                      </span>
+                      <span className={`flex-1 font-body text-beige truncate ${e.done ? 'line-through' : ''}`}>
+                        {e.title}
+                      </span>
+                      <TypeBadge type={e.type} label={e.label} size="sm" />
+                    </button>
+                  ))
+                ) : (
+                  <p className="font-mono text-lg text-beige/50 text-center py-4">Nothing due — free day!</p>
+                )}
+              </div>
+
+              <div className="mt-3 flex justify-end">
+                <RetroButton
+                  color="cyan"
+                  size="sm"
+                  onClick={() => {
+                    goToDay(peek.y, peek.m, peek.d)
+                    setPeek(null)
+                  }}
+                >
+                  Open Day View
+                </RetroButton>
+              </div>
+            </motion.div>
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ---- DAY ---- */}
       {mode === 'day' && (

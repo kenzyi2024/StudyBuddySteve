@@ -19,6 +19,27 @@ export function typeMeta(type) {
   return EVENT_TYPES[type] || EVENT_TYPES.other
 }
 
+// Shared palette for per-course color-coding (tailwind name + hex, so both the
+// tailwind-class UIs and inline-style chips can stay consistent).
+export const COURSE_PALETTE = [
+  { name: 'cyan', hex: '#22e0ff' },
+  { name: 'magenta', hex: '#ff2e97' },
+  { name: 'lime', hex: '#b8ff2e' },
+  { name: 'amber', hex: '#ffb020' },
+  { name: 'grape', hex: '#7b2ff7' },
+  { name: 'crt', hex: '#4dffb8' },
+]
+
+// Map each course name to a stable palette entry (order of first appearance).
+export function courseColors(events) {
+  const map = new Map()
+  for (const e of events) {
+    const c = e.course || 'Course'
+    if (!map.has(c)) map.set(c, COURSE_PALETTE[map.size % COURSE_PALETTE.length])
+  }
+  return map
+}
+
 // Types offered in the editor dropdown (excludes the legacy alias).
 export const EDITABLE_TYPES = ['reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other']
 

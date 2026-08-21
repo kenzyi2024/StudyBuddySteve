@@ -20,7 +20,7 @@ import RetroButton from '../RetroButton.jsx'
 import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
-import { fmtTime, fmtDateLong, typeMeta } from '../../data/events.js'
+import { fmtTime, fmtDateLong, typeMeta, courseColors } from '../../data/events.js'
 import {
   patchEvent,
   deleteEvent as apiDeleteEvent,
@@ -62,7 +62,6 @@ function urgencyColor(days, done) {
 }
 
 const NOTIFIED_KEY = 'steve_notified'
-const COURSE_COLORS = ['cyan', 'magenta', 'lime', 'amber', 'grape', 'crt']
 
 export default function SemesterHome({ user, initialEvents = [], onUploadMore, onLogout }) {
   const [events, setEvents] = useState(initialEvents)
@@ -131,16 +130,13 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
       }),
     )
 
-  // --- courses (for the filter + per-course colors) ---
-  const courses = useMemo(() => {
-    const map = new Map()
-    for (const e of events) {
-      const name = e.course || 'Course'
-      if (!map.has(name)) map.set(name, { name, color: COURSE_COLORS[map.size % COURSE_COLORS.length] })
-    }
-    return [...map.values()]
-  }, [events])
-  const courseColor = (name) => courses.find((c) => c.name === (name || 'Course'))?.color || 'cyan'
+  // --- courses (for the filter + per-course colors), from the shared palette ---
+  const courseMap = useMemo(() => courseColors(events), [events])
+  const courses = useMemo(
+    () => [...courseMap.entries()].map(([name, c]) => ({ name, color: c.name })),
+    [courseMap],
+  )
+  const courseColor = (name) => courseMap.get(name || 'Course')?.name || 'cyan'
 
   // Events scoped to the active course filter (drives every view below).
   const scoped = useMemo(

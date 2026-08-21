@@ -11,19 +11,22 @@ import { typeMeta } from '../../data/events.js'
 
 const ICONS = { BookOpen, PencilLine, HelpCircle, AlertTriangle, FolderGit2, Coffee, Star }
 
-/** Small chunky pill showing an event's type with its retro color + icon. */
-export default function TypeBadge({ type, size = 'md' }) {
+/** Small chunky pill showing an event's type with its retro color + icon.
+ *  For the "other" type, a custom `label` (if provided) replaces "Other". */
+export default function TypeBadge({ type, label, size = 'md' }) {
   const meta = typeMeta(type)
   const Icon = ICONS[meta.icon] || Star
   const pad = size === 'sm' ? 'px-2 py-1 text-[9px]' : 'px-2.5 py-1.5 text-[10px]'
   const iconSize = size === 'sm' ? 12 : 14
+  const text = type === 'other' && label ? label : meta.label
   return (
     <span
       className={`inline-flex items-center gap-1 border-3 border-ink font-pixel
         uppercase text-ink bg-${meta.color} ${pad}`}
+      title={text}
     >
       <Icon size={iconSize} strokeWidth={2.5} />
-      {meta.label}
+      {text}
     </span>
   )
 }

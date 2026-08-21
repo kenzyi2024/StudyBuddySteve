@@ -134,6 +134,20 @@ export async function approveCourse(courseId) {
   return json(await req(`/courses/${courseId}/approve`, { method: 'POST' }))
 }
 
+// All of the signed-in user's events across every course.
+export async function getMyEvents() {
+  return json(await req('/me/events'))
+}
+
+// Absolute URL for the whole-account .ics (subscribe/download).
+export function myCalendarIcsUrl({ reminder } = {}) {
+  const qs = new URLSearchParams()
+  if (reminder) qs.set('reminder', String(reminder))
+  if (authToken) qs.set('token', authToken)
+  const s = qs.toString() ? `?${qs}` : ''
+  return `${BASE}/me/calendar.ics${s}`
+}
+
 // --- calendar sync ---
 // These are reached by top-level navigation / plain links, which can't send an
 // Authorization header — so the token travels as ?token= (backend accepts it).

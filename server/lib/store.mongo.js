@@ -27,9 +27,11 @@ function eventOut(e) {
     title: e.title,
     course: e.courseName || '',
     type: e.type,
+    label: e.label || '',
     due: e.due instanceof Date ? e.due.toISOString() : e.due,
     allDay: !!e.allDay,
     approved: !!e.approved,
+    done: !!e.done,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
   }
@@ -82,9 +84,11 @@ export async function addEvents(userId, courseId, list = []) {
     title: e.title || 'Untitled',
     courseName: e.course || course.name || '',
     type: KNOWN_TYPES.has(e.type) ? e.type : 'other',
+    label: e.label || '',
     due: e.due ? new Date(e.due) : new Date(),
     allDay: !!e.allDay,
     approved: false,
+    done: false,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
   }))
@@ -105,12 +109,18 @@ export async function approvedEventsForCourse(userId, courseId) {
 
 export async function updateEvent(userId, eventId, patch) {
   const clean = {}
-  for (const k of ['title', 'type', 'due', 'allDay', 'approved']) {
+  for (const k of ['title', 'type', 'label', 'due', 'allDay', 'approved', 'done']) {
     if (k in patch) clean[k] = k === 'due' ? new Date(patch[k]) : patch[k]
   }
   if ('course' in patch) clean.courseName = patch.course
   const e = await Event.findOneAndUpdate({ _id: eventId, user: userId }, clean, { new: true })
   return eventOut(e)
+}
+
+// All events across the user's courses (for the account calendar / task list).
+export async function allEventsForUser(userId) {
+  const list = await Event.find({ user: userId }).sort({ due: 1 })
+  return list.map(eventOut)
 }
 
 export async function deleteEvent(userId, eventId) {

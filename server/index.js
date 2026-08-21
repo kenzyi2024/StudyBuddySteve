@@ -152,9 +152,18 @@ app.get('/api/courses/:id/events', requireAuth, async (req, res) => {
 })
 
 app.patch('/api/events/:id', requireAuth, async (req, res) => {
-  const updated = await store.updateEvent(req.userId, req.params.id, req.body || {})
+  const allowed = ['title', 'course', 'type', 'label', 'due', 'allDay', 'approved', 'done']
+  const patch = {}
+  for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k]
+  const updated = await store.updateEvent(req.userId, req.params.id, patch)
   if (!updated) return res.status(404).json({ error: 'Unknown event' })
   res.json({ event: updated })
+})
+
+// All of the signed-in user's events across every course — powers the saved
+// account calendar / task list / reminders.
+app.get('/api/me/events', requireAuth, async (req, res) => {
+  res.json({ events: await store.allEventsForUser(req.userId) })
 })
 
 app.delete('/api/events/:id', requireAuth, async (req, res) => {
@@ -190,6 +199,18 @@ app.get('/api/courses/:id/calendar.ics', requireAuth, async (req, res) => {
     'Content-Disposition',
     `attachment; filename="${(course.name || 'calendar').replace(/[^\w.-]+/g, '_')}.ics"`,
   )
+  res.send(ics)
+})
+
+// One .ics for the user's ENTIRE account (all courses) — subscribe once.
+app.get('/api/me/calendar.ics', requireAuth, async (req, res) => {
+  const events = await store.allEventsForUser(req.userId)
+  const ics = buildICS(events, {
+    calName: 'My Semester · Study Buddy Steve',
+    reminderMinutes: Number(req.query.reminder) || 60,
+  })
+  res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
+  res.setHeader('Content-Disposition', 'attachment; filename="my-semester.ics"')
   res.send(ics)
 })
 

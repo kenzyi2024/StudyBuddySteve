@@ -34,8 +34,8 @@ export function seedEvents() {
     course,
     title,
     type,
-    // stored as ISO; time optional (allDay when hh is null)
-    due: new Date(y, month, day, hh ?? 0, mm ?? 0).toISOString(),
+    // stored as ISO wall-clock; time optional (allDay when hh is null)
+    due: makeDue(y, month, day, hh ?? 0, mm ?? 0),
     allDay: hh == null,
     approved: false,
     confidence,
@@ -66,16 +66,25 @@ export const MONTHS = [
 ]
 export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 
+// Due times are treated as fixed WALL-CLOCK moments (a "11:59 PM" deadline is
+// 11:59 PM regardless of the viewer's timezone). We store the wall-clock in UTC
+// and read it back with getUTC* so it never shifts. Use these helpers + the
+// makeDue() builder everywhere; never new Date(y,m,d,...) for due values.
+
+export function makeDue(y, m, d, hh = 0, mm = 0) {
+  return new Date(Date.UTC(y, m, d, hh, mm)).toISOString()
+}
+
 export function sameDay(iso, y, m, d) {
   const dt = new Date(iso)
-  return dt.getFullYear() === y && dt.getMonth() === m && dt.getDate() === d
+  return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d
 }
 
 export function fmtTime(iso, allDay) {
   if (allDay) return 'All day'
   const dt = new Date(iso)
-  let h = dt.getHours()
-  const m = dt.getMinutes().toString().padStart(2, '0')
+  let h = dt.getUTCHours()
+  const m = dt.getUTCMinutes().toString().padStart(2, '0')
   const ap = h >= 12 ? 'PM' : 'AM'
   h = h % 12 || 12
   return `${h}:${m} ${ap}`
@@ -83,12 +92,12 @@ export function fmtTime(iso, allDay) {
 
 export function fmtDateLong(iso) {
   const dt = new Date(iso)
-  return `${WEEKDAYS[dt.getDay()]} · ${MONTHS[dt.getMonth()]} ${dt.getDate()}`
+  return `${WEEKDAYS[dt.getUTCDay()]} · ${MONTHS[dt.getUTCMonth()]} ${dt.getUTCDate()}`
 }
 
 export function isoDateKey(iso) {
   const dt = new Date(iso)
-  return `${dt.getFullYear()}-${dt.getMonth()}-${dt.getDate()}`
+  return `${dt.getUTCFullYear()}-${dt.getUTCMonth()}-${dt.getUTCDate()}`
 }
 
 // Build a 6-row month grid (array of {day, inMonth, y, m, d}) for a given month.

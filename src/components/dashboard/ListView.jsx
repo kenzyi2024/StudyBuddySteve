@@ -95,7 +95,7 @@ export default function ListView({ events, onEdit, onToggleApprove }) {
                       </div>
                     </div>
 
-                    <TypeBadge type={e.type} size="sm" />
+                    <TypeBadge type={e.type} label={e.label} size="sm" />
 
                     <button
                       onClick={() => onEdit(e)}

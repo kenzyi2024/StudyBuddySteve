@@ -32,9 +32,24 @@ function toUTC(date) {
   )
 }
 
-// All-day DATE value in local calendar terms: 20260914
+// All-day DATE value: 20260914 (wall-clock/UTC parts)
 function toDateValue(date) {
-  return date.getFullYear() + pad(date.getMonth() + 1) + pad(date.getDate())
+  return date.getUTCFullYear() + pad(date.getUTCMonth() + 1) + pad(date.getUTCDate())
+}
+
+// Floating local date-time (no Z): 20260914T235900. Calendars render this in
+// the viewer's own timezone, so a "11:59 PM" deadline shows as 11:59 PM for
+// everyone rather than shifting by UTC offset.
+function toFloating(date) {
+  return (
+    date.getUTCFullYear() +
+    pad(date.getUTCMonth() + 1) +
+    pad(date.getUTCDate()) +
+    'T' +
+    pad(date.getUTCHours()) +
+    pad(date.getUTCMinutes()) +
+    pad(date.getUTCSeconds())
+  )
 }
 
 // --- text handling -----------------------------------------------------
@@ -96,10 +111,11 @@ function buildVEvent(ev, { reminderMinutes, stamp }) {
     lines.push(line('DTSTART;VALUE=DATE', toDateValue(due)))
     lines.push(line('DTEND;VALUE=DATE', toDateValue(next)))
   } else {
-    // Timed: default 1-hour duration ending at the due time.
+    // Timed: default 1-hour duration ending at the due time. Floating so the
+    // deadline displays at the same wall-clock time in any calendar/timezone.
     const start = new Date(due.getTime() - 60 * 60 * 1000)
-    lines.push(line('DTSTART', toUTC(start)))
-    lines.push(line('DTEND', toUTC(due)))
+    lines.push(line('DTSTART', toFloating(start)))
+    lines.push(line('DTEND', toFloating(due)))
   }
 
   const courseTag = ev.course ? `[${ev.course}] ` : ''

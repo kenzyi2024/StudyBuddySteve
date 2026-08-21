@@ -71,13 +71,15 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
     if (live) approveCourse(courseId).catch(() => {})
   }
 
-  // drag-to-reschedule: keep the time, change the day
+  // drag-to-reschedule: keep the wall-clock time, change the day
   const reschedule = (id, y, m, d) =>
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
         const old = new Date(e.due)
-        const due = new Date(y, m, d, old.getHours(), old.getMinutes()).toISOString()
+        const due = new Date(
+          Date.UTC(y, m, d, old.getUTCHours(), old.getUTCMinutes()),
+        ).toISOString()
         persist(id, { due })
         return { ...e, due }
       }),
@@ -115,7 +117,7 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
             </div>
           </div>
           <RetroButton color="beige" size="sm" onClick={onBack}>
-            <ArrowLeft size={16} /> Upload
+            <ArrowLeft size={16} /> My Semester
           </RetroButton>
         </div>
       </header>

@@ -53,9 +53,11 @@ const EventSchema = new Schema(
       enum: ['reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other', 'assignment'],
       default: 'other',
     },
+    label: String, // custom label for the 'other' type
     due: { type: Date, required: true },
     allDay: { type: Boolean, default: false },
     approved: { type: Boolean, default: false },
+    done: { type: Boolean, default: false }, // student checked it off
     confidence: Number,
     source: { page: Number, snippet: String, method: String },
   },

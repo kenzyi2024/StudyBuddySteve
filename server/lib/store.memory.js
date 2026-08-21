@@ -26,9 +26,11 @@ function eventOut(e) {
     title: e.title,
     course: e.courseName || '',
     type: e.type,
+    label: e.label || '',
     due: e.due instanceof Date ? e.due.toISOString() : e.due,
     allDay: !!e.allDay,
     approved: !!e.approved,
+    done: !!e.done,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
   }
@@ -86,9 +88,11 @@ export async function addEvents(userId, courseId, list = []) {
       title: e.title || 'Untitled',
       courseName: e.course || course.name || '',
       type: e.type || 'other',
+      label: e.label || '',
       due: e.due ? new Date(e.due) : new Date(),
       allDay: !!e.allDay,
       approved: false,
+      done: false,
       confidence: e.confidence ?? 0.5,
       source: e.source || null,
     }
@@ -111,10 +115,18 @@ export async function approvedEventsForCourse(userId, courseId) {
 export async function updateEvent(userId, eventId, patch) {
   const e = events.get(eventId)
   if (!e || e.user !== userId) return null
-  for (const k of ['title', 'type', 'allDay', 'approved']) if (k in patch) e[k] = patch[k]
+  for (const k of ['title', 'type', 'label', 'allDay', 'approved', 'done']) if (k in patch) e[k] = patch[k]
   if ('due' in patch) e.due = new Date(patch.due)
   if ('course' in patch) e.courseName = patch.course
   return eventOut(e)
+}
+
+// All events across the user's courses.
+export async function allEventsForUser(userId) {
+  return [...events.values()]
+    .filter((e) => e.user === userId)
+    .sort((a, b) => new Date(a.due) - new Date(b.due))
+    .map(eventOut)
 }
 export async function deleteEvent(userId, eventId) {
   const e = events.get(eventId)

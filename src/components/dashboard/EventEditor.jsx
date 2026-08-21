@@ -4,12 +4,13 @@ import { X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import { EVENT_TYPES, EDITABLE_TYPES } from '../../data/events.js'
 
-// Split an ISO string into <input type=date> and <input type=time> values.
+// Split an ISO string into <input type=date> and <input type=time> values,
+// reading the wall-clock (UTC) parts so times never shift by timezone.
 function isoToInputs(iso) {
   const dt = new Date(iso)
   const pad = (n) => String(n).padStart(2, '0')
-  const date = `${dt.getFullYear()}-${pad(dt.getMonth() + 1)}-${pad(dt.getDate())}`
-  const time = `${pad(dt.getHours())}:${pad(dt.getMinutes())}`
+  const date = `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`
+  const time = `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`
   return { date, time }
 }
 
@@ -30,14 +31,16 @@ function Inner({ event, onSave, onClose, onDelete }) {
   const [title, setTitle] = useState(event.title)
   const [course, setCourse] = useState(event.course)
   const [type, setType] = useState(event.type)
+  const [label, setLabel] = useState(event.label || '')
   const [date, setDate] = useState(init.date)
-  const [time, setTime] = useState(init.time)
+  // Default a timed deadline to 11:59 PM unless the event already has a time.
+  const [time, setTime] = useState(event.allDay ? '23:59' : init.time || '23:59')
   const [allDay, setAllDay] = useState(event.allDay)
 
   const save = () => {
     const [y, m, d] = date.split('-').map(Number)
-    let hh = 0
-    let mm = 0
+    let hh = 23
+    let mm = 59 // default 11:59 PM
     if (!allDay && time) {
       ;[hh, mm] = time.split(':').map(Number)
     }
@@ -46,8 +49,9 @@ function Inner({ event, onSave, onClose, onDelete }) {
       title: title.trim() || 'Untitled',
       course: course.trim() || 'Course',
       type,
+      label: type === 'other' ? label.trim() : '',
       allDay,
-      due: new Date(y, m - 1, d, hh, mm).toISOString(),
+      due: new Date(Date.UTC(y, m - 1, d, hh, mm)).toISOString(),
     })
   }
 
@@ -99,6 +103,21 @@ function Inner({ event, onSave, onClose, onDelete }) {
               </select>
             </div>
           </div>
+
+          {/* custom label for the Other type */}
+          {type === 'other' && (
+            <div>
+              <label className="font-pixel text-[10px] text-cyan block mb-1">
+                CUSTOM LABEL
+              </label>
+              <input
+                className={field}
+                value={label}
+                placeholder="e.g. Lab, Discussion, Office Hours…"
+                onChange={(e) => setLabel(e.target.value)}
+              />
+            </div>
+          )}
 
           <div className="grid grid-cols-2 gap-3">
             <div>

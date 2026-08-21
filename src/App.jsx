@@ -6,8 +6,9 @@ import RetroButton from './components/RetroButton.jsx'
 import UploadZone from './components/UploadZone.jsx'
 import PixelWipe from './components/PixelWipe.jsx'
 import Dashboard from './components/dashboard/Dashboard.jsx'
+import SemesterHome from './components/home/SemesterHome.jsx'
 import AuthModal from './components/AuthModal.jsx'
-import { me, logout } from './lib/api.js'
+import { me, logout, getMyEvents } from './lib/api.js'
 
 const FEATURES = [
   {
@@ -32,18 +33,36 @@ const FEATURES = [
 
 export default function App() {
   const [wipe, setWipe] = useState(false)
-  const [screen, setScreen] = useState('upload') // 'upload' | 'dashboard'
-  // Result handed up by UploadZone: { courseId, events }. null courseId = demo.
+  const [screen, setScreen] = useState('upload') // 'upload' | 'dashboard' | 'home'
   const [parsed, setParsed] = useState({ courseId: null, events: null })
   const [user, setUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
+  const [homeEvents, setHomeEvents] = useState([])
 
-  // Restore any existing session on load (ignores failure / offline).
+  // Restore session on load; if the user has saved events, land on their home.
   useEffect(() => {
     me()
-      .then((r) => setUser(r.user))
+      .then(async (r) => {
+        setUser(r.user)
+        if (r.user) {
+          const ev = await loadHomeEvents()
+          if (ev.length) setScreen('home')
+        }
+      })
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
+
+  const loadHomeEvents = async () => {
+    try {
+      const { events } = await getMyEvents()
+      setHomeEvents(events || [])
+      return events || []
+    } catch {
+      setHomeEvents([])
+      return []
+    }
+  }
 
   const transitionTo = (next) => {
     setWipe(true)
@@ -55,6 +74,19 @@ export default function App() {
     transitionTo('dashboard')
   }
 
+  // From the review dashboard back to the saved semester home (refresh events).
+  const goHome = async () => {
+    await loadHomeEvents()
+    transitionTo('home')
+  }
+
+  const onAuthed = async (u) => {
+    setUser(u)
+    setAuthOpen(false)
+    const ev = await loadHomeEvents()
+    if (ev.length) transitionTo('home')
+  }
+
   const doLogout = async () => {
     try {
       await logout()
@@ -62,7 +94,8 @@ export default function App() {
       /* ignore */
     }
     setUser(null)
-    if (screen === 'dashboard') transitionTo('upload')
+    setHomeEvents([])
+    transitionTo('upload')
   }
 
   return (
@@ -72,20 +105,22 @@ export default function App() {
         {wipe && <PixelWipe onFinished={() => setWipe(false)} />}
       </AnimatePresence>
 
-      <AuthModal
-        open={authOpen}
-        onClose={() => setAuthOpen(false)}
-        onAuthed={(u) => {
-          setUser(u)
-          setAuthOpen(false)
-        }}
-      />
+      <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuthed={onAuthed} />
+
+      {screen === 'home' && (
+        <SemesterHome
+          user={user}
+          initialEvents={homeEvents}
+          onUploadMore={() => transitionTo('upload')}
+          onLogout={doLogout}
+        />
+      )}
 
       {screen === 'dashboard' && (
         <Dashboard
           courseId={parsed.courseId}
           initialEvents={parsed.events}
-          onBack={() => transitionTo('upload')}
+          onBack={goHome}
         />
       )}
 
@@ -106,9 +141,14 @@ export default function App() {
           <nav className="hidden sm:flex items-center gap-3">
             {user ? (
               <>
-                <span className="font-mono text-lg text-cyan truncate max-w-[180px]">
+                <span className="font-mono text-lg text-cyan truncate max-w-[160px]">
                   ▸ {user.name || user.email}
                 </span>
+                {homeEvents.length > 0 && (
+                  <RetroButton color="cyan" size="sm" onClick={goHome}>
+                    My Semester
+                  </RetroButton>
+                )}
                 <RetroButton color="magenta" size="sm" onClick={doLogout}>
                   <LogOut size={14} /> Log Out
                 </RetroButton>
@@ -249,30 +289,53 @@ export default function App() {
           </div>
         </section>
 
-        {/* ---------- CTA STRIP ---------- */}
+        {/* ---------- CTA STRIP (adapts to auth state) ---------- */}
         <section className="py-10">
           <div className="crt retro-panel noise p-8 sm:p-10 text-center shadow-chunk-cyan flex flex-col items-center">
-            <Steve mood="happy" size={120} />
-            <h2 className="font-pixel text-lg sm:text-xl text-beige mt-6 leading-relaxed">
-              READY PLAYER <span className="text-magenta">ONE?</span>
-            </h2>
-            <p className="font-body text-beige/80 mt-3 max-w-md">
-              Free for students. No credit card. Steve just wants to eat your
-              deadlines so you don&apos;t have to.
-            </p>
-            <div className="mt-6">
-              <RetroButton
-                color="magenta"
-                size="lg"
-                onClick={() =>
-                  document
-                    .getElementById('upload')
-                    ?.scrollIntoView({ behavior: 'smooth' })
-                }
-              >
-                ▸ Start Free
-              </RetroButton>
-            </div>
+            <Steve mood={user ? 'done' : 'happy'} size={120} />
+            {user ? (
+              <>
+                <h2 className="font-pixel text-lg sm:text-xl text-beige mt-6 leading-relaxed">
+                  YOU&apos;RE <span className="text-lime">IN!</span>
+                </h2>
+                <p className="font-body text-beige/80 mt-3 max-w-md">
+                  {homeEvents.length
+                    ? 'Jump back into your semester, or feed Steve another syllabus.'
+                    : 'Drop your first syllabus above and Steve will build your calendar.'}
+                </p>
+                <div className="mt-6 flex flex-wrap gap-3 justify-center">
+                  {homeEvents.length > 0 && (
+                    <RetroButton color="cyan" size="lg" onClick={goHome}>
+                      ▸ My Semester
+                    </RetroButton>
+                  )}
+                  <RetroButton
+                    color="lime"
+                    size="lg"
+                    onClick={() =>
+                      document.getElementById('upload')?.scrollIntoView({ behavior: 'smooth' })
+                    }
+                  >
+                    ▸ Add Syllabus
+                  </RetroButton>
+                </div>
+              </>
+            ) : (
+              <>
+                <h2 className="font-pixel text-lg sm:text-xl text-beige mt-6 leading-relaxed">
+                  READY PLAYER <span className="text-magenta">ONE?</span>
+                </h2>
+                <p className="font-body text-beige/80 mt-3 max-w-md">
+                  Free for students. No credit card. Steve just wants to eat your
+                  deadlines so you don&apos;t have to.
+                </p>
+                <div className="mt-6">
+                  <RetroButton color="magenta" size="lg" onClick={() => setAuthOpen(true)}>
+                    ▸ Start Free
+                  </RetroButton>
+                </div>
+              </>
+            )}
           </div>
         </section>
       </main>

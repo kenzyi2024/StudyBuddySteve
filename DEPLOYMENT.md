@@ -110,7 +110,44 @@ want `"store":"mongo"`.
 Open the Vercel URL on your phone and laptop — accounts and events are shared
 because they live in Atlas.
 
-## 4. Calendar OAuth (optional)
+## 4. Background reminders (push when the app is closed)
+
+Deadlines can notify students even when the tab/app is closed, via Web Push +
+a scheduled sender. Three steps:
+
+**a) Generate VAPID keys** (once) and set them on the gateway:
+```bash
+npx web-push generate-vapid-keys
+# then, on steve-gateway:
+gcloud run services update steve-gateway --region us-central1 --update-env-vars \
+  VAPID_PUBLIC_KEY=<public>,VAPID_PRIVATE_KEY=<private>,VAPID_SUBJECT=mailto:you@example.com,CRON_SECRET=<random-string>
+```
+
+**b) Schedule the reminder sender** with Cloud Scheduler — it POSTs the
+protected cron endpoint every morning (08:00) to push that day's deadlines:
+```bash
+gcloud services enable cloudscheduler.googleapis.com
+gcloud scheduler jobs create http steve-reminders \
+  --location us-central1 \
+  --schedule "0 8 * * *" \
+  --uri "https://<your-gateway>.run.app/api/cron/send-reminders" \
+  --http-method POST \
+  --headers "x-cron-key=<the same CRON_SECRET>"
+```
+(Use `--schedule "0 * * * *"` for hourly if you prefer.)
+
+**c) Students opt in** by clicking **Reminders** on their My Semester page and
+allowing notifications. That registers the service worker (`/sw.js`) and stores
+a push subscription. From then on they get an OS notification for anything due
+within 24 hours — no app needed open.
+
+Platform notes: works on desktop Chrome/Firefox/Edge and Android. On iOS the
+student must **Add to Home Screen** first (Apple only allows web push for
+installed PWAs). The `.ics` subscription (step 3's `.ics` file added to Apple/
+Google Calendar) is the universal fallback — those apps fire native reminders
+everywhere.
+
+## 5. Calendar OAuth (optional)
 
 Update each provider's redirect URI to the **public gateway URL** and set the
 matching env vars on `steve-gateway`:

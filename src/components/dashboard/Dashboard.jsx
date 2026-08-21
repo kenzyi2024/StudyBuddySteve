@@ -156,6 +156,20 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
           totalCount={events.length}
           icsUrl={courseId ? calendarIcsUrl(courseId) : null}
         />
+
+        {/* save & finish — events are already saved to the account; this just
+            takes the student to their saved calendar. */}
+        <div className="retro-panel noise p-5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-chunk-lg">
+          <div>
+            <p className="font-pixel text-xs text-lime">SAVED TO YOUR ACCOUNT ✓</p>
+            <p className="font-mono text-lg text-beige/70 mt-1">
+              These {events.length} items live in your calendar on every device.
+            </p>
+          </div>
+          <RetroButton color="lime" size="lg" onClick={onBack}>
+            ▸ View My Calendar
+          </RetroButton>
+        </div>
       </main>
 
       {/* edit modal */}

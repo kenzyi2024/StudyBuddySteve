@@ -133,6 +133,43 @@ export async function approveAll(userId, courseId) {
   return eventsForCourse(userId, courseId)
 }
 
+// --- push subscriptions ---
+export async function savePushSub(userId, sub) {
+  // de-dupe by endpoint, then add
+  await User.updateOne({ _id: userId }, { $pull: { pushSubs: { endpoint: sub.endpoint } } })
+  await User.updateOne({ _id: userId }, { $push: { pushSubs: sub } })
+}
+export async function removePushSub(userId, endpoint) {
+  await User.updateOne({ _id: userId }, { $pull: { pushSubs: { endpoint } } })
+}
+export async function getPushSubs(userId) {
+  const u = await User.findById(userId).select('pushSubs')
+  return u?.pushSubs || []
+}
+
+// --- reminders ---
+// Events due within `hours`, not done, not yet reminded. Returns raw rows with
+// userId so the cron can group + push.
+export async function dueSoonUnreminded(hours = 24) {
+  const now = new Date()
+  const until = new Date(now.getTime() + hours * 3600 * 1000)
+  const list = await Event.find({
+    done: false,
+    reminded: { $ne: true },
+    due: { $gte: now, $lte: until },
+  }).sort({ due: 1 })
+  return list.map((e) => ({
+    id: String(e._id),
+    userId: String(e.user),
+    title: e.title,
+    course: e.courseName || '',
+    due: e.due.toISOString(),
+  }))
+}
+export async function markReminded(ids = []) {
+  if (ids.length) await Event.updateMany({ _id: { $in: ids } }, { reminded: true })
+}
+
 // --- provider tokens (stored on the user) ---
 export async function saveTokens(userId, provider, tok) {
   await User.updateOne({ _id: userId }, { [provider]: tok })

@@ -43,7 +43,15 @@ export async function findUserByEmail(email) {
 }
 export async function createUser({ email, name, passwordHash }) {
   const _id = uid('user')
-  const user = { _id, email: norm(email), name: name || '', passwordHash, google: null, outlook: null }
+  const user = {
+    _id,
+    email: norm(email),
+    name: name || '',
+    passwordHash,
+    google: null,
+    outlook: null,
+    pushSubs: [],
+  }
   users.set(_id, user)
   usersByEmail.set(user.email, _id)
   return user
@@ -93,6 +101,7 @@ export async function addEvents(userId, courseId, list = []) {
       allDay: !!e.allDay,
       approved: false,
       done: false,
+      reminded: false,
       confidence: e.confidence ?? 0.5,
       source: e.source || null,
     }
@@ -136,6 +145,46 @@ export async function deleteEvent(userId, eventId) {
 export async function approveAll(userId, courseId) {
   scoped(userId, courseId).forEach((e) => (events.get(e._id).approved = true))
   return eventsForCourse(userId, courseId)
+}
+
+// --- push subscriptions ---
+export async function savePushSub(userId, sub) {
+  const u = users.get(userId)
+  if (!u) return
+  u.pushSubs = (u.pushSubs || []).filter((s) => s.endpoint !== sub.endpoint)
+  u.pushSubs.push(sub)
+}
+export async function removePushSub(userId, endpoint) {
+  const u = users.get(userId)
+  if (u) u.pushSubs = (u.pushSubs || []).filter((s) => s.endpoint !== endpoint)
+}
+export async function getPushSubs(userId) {
+  return users.get(userId)?.pushSubs || []
+}
+
+// --- reminders ---
+export async function dueSoonUnreminded(hours = 24) {
+  const now = Date.now()
+  const until = now + hours * 3600 * 1000
+  return [...events.values()]
+    .filter((e) => {
+      const t = new Date(e.due).getTime()
+      return !e.done && !e.reminded && t >= now && t <= until
+    })
+    .sort((a, b) => new Date(a.due) - new Date(b.due))
+    .map((e) => ({
+      id: e._id,
+      userId: e.user,
+      title: e.title,
+      course: e.courseName || '',
+      due: (e.due instanceof Date ? e.due : new Date(e.due)).toISOString(),
+    }))
+}
+export async function markReminded(ids = []) {
+  for (const id of ids) {
+    const e = events.get(id)
+    if (e) e.reminded = true
+  }
 }
 
 // --- provider tokens ---

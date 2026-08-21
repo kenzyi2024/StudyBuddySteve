@@ -25,6 +25,7 @@ import {
   refreshAccessToken,
 } from './lib/oauth.js'
 import { pushEvents } from './lib/calendarSync.js'
+import { initPush, pushEnabled, publicKey, sendPush } from './lib/push.js'
 
 dotenv.config()
 
@@ -202,6 +203,65 @@ app.get('/api/courses/:id/calendar.ics', requireAuth, async (req, res) => {
   res.send(ics)
 })
 
+// ------------------------------------------------------------------
+//  Web Push reminders (deadlines reach students even when the app is closed)
+// ------------------------------------------------------------------
+
+// VAPID public key the browser needs to subscribe (null when push is off).
+app.get('/api/push/key', (_req, res) => {
+  res.json({ key: pushEnabled() ? publicKey() : null })
+})
+
+app.post('/api/push/subscribe', requireAuth, async (req, res) => {
+  const sub = req.body
+  if (!sub || !sub.endpoint) return res.status(400).json({ error: 'Invalid subscription' })
+  await store.savePushSub(req.userId, sub)
+  res.status(201).json({ ok: true })
+})
+
+app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
+  if (req.body?.endpoint) await store.removePushSub(req.userId, req.body.endpoint)
+  res.json({ ok: true })
+})
+
+// Reminder sender — triggered by Cloud Scheduler (NOT a user). Protected by a
+// shared secret so only the scheduler can invoke it. Finds deadlines due soon,
+// groups by user, sends one push digest each, and marks them reminded.
+app.post('/api/cron/send-reminders', async (req, res) => {
+  const secret = process.env.CRON_SECRET
+  if (!secret || req.headers['x-cron-key'] !== secret) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  if (!pushEnabled()) return res.json({ sent: 0, note: 'push disabled (set VAPID keys)' })
+
+  const hours = Number(req.query.hours) || 24
+  const due = await store.dueSoonUnreminded(hours)
+  const byUser = {}
+  for (const e of due) (byUser[e.userId] ||= []).push(e)
+
+  let sent = 0
+  const remindedIds = []
+  for (const [userId, items] of Object.entries(byUser)) {
+    const subs = await store.getPushSubs(userId)
+    if (!subs.length) continue
+    const title = items.length === 1 ? '⏰ 1 deadline coming up' : `⏰ ${items.length} deadlines coming up`
+    const body = items.slice(0, 4).map((i) => `• ${i.title}${i.course ? ` (${i.course})` : ''}`).join('\n')
+    for (const sub of subs) {
+      try {
+        await sendPush(sub, { title, body, url: FRONTEND_URL })
+        sent++
+      } catch (err) {
+        if (err.statusCode === 404 || err.statusCode === 410) {
+          await store.removePushSub(userId, sub.endpoint) // subscription expired
+        }
+      }
+    }
+    remindedIds.push(...items.map((i) => i.id))
+  }
+  await store.markReminded(remindedIds)
+  res.json({ users: Object.keys(byUser).length, sent, events: remindedIds.length })
+})
+
 // One .ics for the user's ENTIRE account (all courses) — subscribe once.
 app.get('/api/me/calendar.ics', requireAuth, async (req, res) => {
   const events = await store.allEventsForUser(req.userId)
@@ -280,9 +340,12 @@ app.post('/api/courses/:id/sync/:provider', requireAuth, async (req, res) => {
 // ------------------------------------------------------------------
 //  Boot: connect DB first, then listen.
 // ------------------------------------------------------------------
+const pushOn = initPush()
 store.initStore().then((mode) => {
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
-    console.log(`▸ Steve's gateway listening on http://localhost:${PORT}  [store: ${mode}]`)
+    console.log(
+      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}]`,
+    )
   })
 })

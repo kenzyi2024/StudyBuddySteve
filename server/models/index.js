@@ -21,6 +21,8 @@ const UserSchema = new Schema(
     // OAuth tokens for calendar providers (stored per-user).
     google: TokenSchema,
     outlook: TokenSchema,
+    // Web Push subscriptions (one per browser/device the student enabled).
+    pushSubs: { type: [Schema.Types.Mixed], default: [] },
   },
   { timestamps: true },
 )
@@ -58,6 +60,7 @@ const EventSchema = new Schema(
     allDay: { type: Boolean, default: false },
     approved: { type: Boolean, default: false },
     done: { type: Boolean, default: false }, // student checked it off
+    reminded: { type: Boolean, default: false }, // a push reminder was sent
     confidence: Number,
     source: { page: Number, snippet: String, method: String },
   },

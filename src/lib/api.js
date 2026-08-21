@@ -139,6 +139,20 @@ export async function getMyEvents() {
   return json(await req('/me/events'))
 }
 
+// --- web push ---
+export async function getPushKey() {
+  return json(await req('/push/key'))
+}
+export async function subscribePush(subscription) {
+  return json(
+    await req('/push/subscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(subscription),
+    }),
+  )
+}
+
 // Absolute URL for the whole-account .ics (subscribe/download).
 export function myCalendarIcsUrl({ reminder } = {}) {
   const qs = new URLSearchParams()

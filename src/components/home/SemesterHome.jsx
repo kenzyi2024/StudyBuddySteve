@@ -19,7 +19,15 @@ import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
 import { fmtTime, fmtDateLong, typeMeta } from '../../data/events.js'
-import { patchEvent, myCalendarIcsUrl } from '../../lib/api.js'
+import { patchEvent, myCalendarIcsUrl, getPushKey, subscribePush } from '../../lib/api.js'
+
+// Convert a base64url VAPID key to the Uint8Array the Push API expects.
+function urlB64ToUint8Array(base64) {
+  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
+  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
+  const raw = atob(b64)
+  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
+}
 
 // Whole-day difference between an event's wall-clock date and today.
 function daysUntil(iso) {
@@ -46,11 +54,13 @@ function urgencyColor(days, done) {
 }
 
 const NOTIFIED_KEY = 'steve_notified'
+const COURSE_COLORS = ['cyan', 'magenta', 'lime', 'amber', 'grape', 'crt']
 
 export default function SemesterHome({ user, initialEvents = [], onUploadMore, onLogout }) {
   const [events, setEvents] = useState(initialEvents)
   const [view, setView] = useState('overview') // overview | calendar | tasks
   const [editing, setEditing] = useState(null)
+  const [courseFilter, setCourseFilter] = useState(null) // null = all courses
   const [notify, setNotify] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted',
   )
@@ -96,37 +106,70 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
       }),
     )
 
+  // --- courses (for the filter + per-course colors) ---
+  const courses = useMemo(() => {
+    const map = new Map()
+    for (const e of events) {
+      const name = e.course || 'Course'
+      if (!map.has(name)) map.set(name, { name, color: COURSE_COLORS[map.size % COURSE_COLORS.length] })
+    }
+    return [...map.values()]
+  }, [events])
+  const courseColor = (name) => courses.find((c) => c.name === (name || 'Course'))?.color || 'cyan'
+
+  // Events scoped to the active course filter (drives every view below).
+  const scoped = useMemo(
+    () => (courseFilter ? events.filter((e) => (e.course || 'Course') === courseFilter) : events),
+    [events, courseFilter],
+  )
+
   // --- derived stats ---
   const stats = useMemo(() => {
-    const total = events.length
-    const done = events.filter((e) => e.done).length
-    const overdue = events.filter((e) => !e.done && daysUntil(e.due) < 0).length
-    const thisWeek = events.filter((e) => {
+    const total = scoped.length
+    const done = scoped.filter((e) => e.done).length
+    const overdue = scoped.filter((e) => !e.done && daysUntil(e.due) < 0).length
+    const thisWeek = scoped.filter((e) => {
       const d = daysUntil(e.due)
       return !e.done && d >= 0 && d <= 7
     }).length
     return { total, done, overdue, thisWeek, pct: total ? Math.round((done / total) * 100) : 0 }
-  }, [events])
+  }, [scoped])
 
   const upcoming = useMemo(
     () =>
-      events
+      scoped
         .filter((e) => !e.done && daysUntil(e.due) >= -3)
         .sort((a, b) => new Date(a.due) - new Date(b.due))
         .slice(0, 12),
-    [events],
+    [scoped],
   )
 
   const openTasks = useMemo(
-    () => events.filter((e) => !e.done).sort((a, b) => new Date(a.due) - new Date(b.due)),
-    [events],
+    () => scoped.filter((e) => !e.done).sort((a, b) => new Date(a.due) - new Date(b.due)),
+    [scoped],
   )
 
-  // --- browser reminders (while the app is open) ---
+  // --- reminders: background push (works when the app is closed) with an
+  //     in-page notification fallback when push isn't available/configured ---
   const enableReminders = async () => {
     if (typeof Notification === 'undefined') return
     const perm = await Notification.requestPermission()
-    setNotify(perm === 'granted')
+    if (perm !== 'granted') return
+    setNotify(true)
+    try {
+      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
+      const { key } = await getPushKey()
+      if (!key) return // server push not configured; keep in-page reminders
+      const reg = await navigator.serviceWorker.register('/sw.js')
+      await navigator.serviceWorker.ready
+      const sub = await reg.pushManager.subscribe({
+        userVisibleOnly: true,
+        applicationServerKey: urlB64ToUint8Array(key),
+      })
+      await subscribePush(sub)
+    } catch {
+      /* push subscribe failed — in-page reminders still work */
+    }
   }
 
   useEffect(() => {
@@ -178,7 +221,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
             {e.title}
           </div>
           <div className="flex items-center gap-3 font-mono text-base text-beige/60 mt-0.5">
-            {e.course && <span className="text-cyan">{e.course}</span>}
+            {e.course && <span className={`text-${courseColor(e.course)}`}>{e.course}</span>}
             <span className="flex items-center gap-1">
               <Clock size={12} /> {fmtDateLong(e.due).replace(/^.*· /, '')} · {fmtTime(e.due, e.allDay)}
             </span>
@@ -256,6 +299,30 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
           </div>
         </div>
 
+        {/* per-course filter chips */}
+        {courses.length > 1 && (
+          <div className="flex items-center gap-2 flex-wrap">
+            <span className="font-pixel text-[10px] text-beige/50 mr-1">COURSE:</span>
+            <button
+              onClick={() => setCourseFilter(null)}
+              className={`px-3 py-1.5 border-3 border-ink font-mono text-base transition-colors
+                ${!courseFilter ? 'bg-beige text-ink' : 'bg-void text-beige/70 hover:bg-dusk'}`}
+            >
+              All
+            </button>
+            {courses.map((c) => (
+              <button
+                key={c.name}
+                onClick={() => setCourseFilter(c.name)}
+                className={`px-3 py-1.5 border-3 border-ink font-mono text-base transition-colors
+                  ${courseFilter === c.name ? `bg-${c.color} text-ink` : 'bg-void text-beige/70 hover:bg-dusk'}`}
+              >
+                {c.name}
+              </button>
+            ))}
+          </div>
+        )}
+
         {view === 'overview' && (
           <div className="space-y-6">
             {/* stat cards */}
@@ -314,7 +381,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
         )}
 
         {view === 'calendar' && (
-          <CalendarView events={events} onEdit={setEditing} onReschedule={reschedule} />
+          <CalendarView events={scoped} onEdit={setEditing} onReschedule={reschedule} />
         )}
 
         {view === 'tasks' && (
@@ -327,13 +394,13 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
                 <p className="font-pixel text-sm text-lime mt-3">EVERYTHING&apos;S DONE!</p>
               </div>
             )}
-            {events.some((e) => e.done) && (
+            {scoped.some((e) => e.done) && (
               <details className="mt-4">
                 <summary className="font-pixel text-[11px] text-beige/60 cursor-pointer py-2">
-                  ✓ COMPLETED ({events.filter((e) => e.done).length})
+                  ✓ COMPLETED ({scoped.filter((e) => e.done).length})
                 </summary>
                 <div className="space-y-2 mt-2">
-                  {events.filter((e) => e.done).map((e) => (
+                  {scoped.filter((e) => e.done).map((e) => (
                     <TaskRow key={e.id} e={e} />
                   ))}
                 </div>

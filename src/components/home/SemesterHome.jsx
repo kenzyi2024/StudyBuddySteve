@@ -12,6 +12,8 @@ import {
   Clock,
   Flame,
   LogOut,
+  Trash2,
+  Eraser,
 } from 'lucide-react'
 import Steve from '../Steve.jsx'
 import RetroButton from '../RetroButton.jsx'
@@ -19,7 +21,13 @@ import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
 import { fmtTime, fmtDateLong, typeMeta } from '../../data/events.js'
-import { patchEvent, myCalendarIcsUrl, getPushKey, subscribePush } from '../../lib/api.js'
+import {
+  patchEvent,
+  deleteEvent as apiDeleteEvent,
+  myCalendarIcsUrl,
+  getPushKey,
+  subscribePush,
+} from '../../lib/api.js'
 
 // Convert a base64url VAPID key to the Uint8Array the Push API expects.
 function urlB64ToUint8Array(base64) {
@@ -93,7 +101,24 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
   }
   const deleteEvent = (id) => {
     setEvents((prev) => prev.filter((e) => e.id !== id))
+    apiDeleteEvent(id).catch(() => {})
     setEditing(null)
+  }
+  // Bulk delete: removes a set of ids locally and on the server.
+  const deleteMany = (ids) => {
+    const set = new Set(ids)
+    setEvents((prev) => prev.filter((e) => !set.has(e.id)))
+    ids.forEach((id) => apiDeleteEvent(id).catch(() => {}))
+  }
+  const clearCompleted = () => {
+    const ids = scoped.filter((e) => e.done).map((e) => e.id)
+    if (ids.length && window.confirm(`Delete ${ids.length} completed task(s)? This can't be undone.`))
+      deleteMany(ids)
+  }
+  const clearAll = () => {
+    const ids = scoped.map((e) => e.id)
+    if (ids.length && window.confirm(`Delete ALL ${ids.length} task(s) shown? This can't be undone.`))
+      deleteMany(ids)
   }
   const reschedule = (id, y, m, d) =>
     setEvents((prev) =>
@@ -231,6 +256,13 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
           {e.done ? 'done' : countdownLabel(days)}
         </span>
         <TypeBadge type={e.type} label={e.label} size="sm" />
+        <button
+          onClick={() => deleteEvent(e.id)}
+          aria-label="Delete task"
+          className="shrink-0 w-8 h-8 grid place-items-center border-3 border-ink bg-void text-magenta hover:bg-magenta hover:text-ink transition-colors"
+        >
+          <Trash2 size={15} />
+        </button>
       </motion.div>
     )
   }
@@ -386,6 +418,27 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
 
         {view === 'tasks' && (
           <div className="space-y-2">
+            {(openTasks.length > 0 || scoped.some((e) => e.done)) && (
+              <div className="flex items-center justify-between gap-2 flex-wrap pb-1">
+                <span className="font-mono text-lg text-beige/60">
+                  {openTasks.length} to do · {scoped.filter((e) => e.done).length} done
+                </span>
+                <div className="flex gap-2">
+                  <RetroButton
+                    color="amber"
+                    size="sm"
+                    onClick={clearCompleted}
+                    disabled={!scoped.some((e) => e.done)}
+                    style={{ opacity: scoped.some((e) => e.done) ? 1 : 0.4 }}
+                  >
+                    <Eraser size={14} /> Clear Completed
+                  </RetroButton>
+                  <RetroButton color="magenta" size="sm" onClick={clearAll}>
+                    <Trash2 size={14} /> Clear All
+                  </RetroButton>
+                </div>
+              </div>
+            )}
             {openTasks.length ? (
               openTasks.map((e) => <TaskRow key={e.id} e={e} />)
             ) : (

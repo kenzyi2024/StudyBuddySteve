@@ -138,19 +138,18 @@ export default function App() {
               STUDY BUDDY <span className="text-magenta">STEVE</span>
             </span>
           </div>
-          <nav className="hidden sm:flex items-center gap-3">
+          <nav className="flex items-center gap-2">
             {user ? (
               <>
-                <span className="font-mono text-lg text-cyan truncate max-w-[160px]">
+                <span className="hidden md:inline font-mono text-lg text-cyan truncate max-w-[160px]">
                   ▸ {user.name || user.email}
                 </span>
-                {homeEvents.length > 0 && (
-                  <RetroButton color="cyan" size="sm" onClick={goHome}>
-                    My Semester
-                  </RetroButton>
-                )}
+                <RetroButton color="cyan" size="sm" onClick={goHome}>
+                  My Calendar
+                </RetroButton>
                 <RetroButton color="magenta" size="sm" onClick={doLogout}>
-                  <LogOut size={14} /> Log Out
+                  <LogOut size={14} />
+                  <span className="hidden sm:inline"> Log Out</span>
                 </RetroButton>
               </>
             ) : (

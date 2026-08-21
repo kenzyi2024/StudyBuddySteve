@@ -12,7 +12,7 @@ from __future__ import annotations
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
 from extractor import extract
-from parser import parse
+from parser import parse as parse_syllabus
 
 app = FastAPI(title="Study Buddy Steve Parser", version="0.2.0")
 
@@ -38,7 +38,7 @@ async def parse(file: UploadFile = File(...)):
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=422, detail=f"Could not read file: {e}")
 
-    result = parse(extraction)
+    result = parse_syllabus(extraction)
     result["filename"] = file.filename
     result["charCount"] = len(extraction.get("text", ""))
     result["tableCount"] = len(extraction.get("tables", []))

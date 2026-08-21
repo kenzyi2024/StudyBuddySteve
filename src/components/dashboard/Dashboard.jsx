@@ -7,7 +7,6 @@ import CalendarView from './CalendarView.jsx'
 import ListView from './ListView.jsx'
 import EventEditor from './EventEditor.jsx'
 import SyncBar from './SyncBar.jsx'
-import { seedEvents } from '../../data/events.js'
 import {
   patchEvent,
   deleteEvent as apiDeleteEvent,
@@ -25,9 +24,8 @@ import {
  *   onBack        — return to the upload screen
  */
 export default function Dashboard({ courseId = null, initialEvents, onBack }) {
-  const [events, setEvents] = useState(() =>
-    initialEvents && initialEvents.length ? initialEvents : seedEvents(),
-  )
+  // Show the REAL parsed events (even if empty). Never fabricate sample data.
+  const [events, setEvents] = useState(() => initialEvents ?? [])
   const [tab, setTab] = useState('calendar') // 'calendar' | 'list'
   const [editing, setEditing] = useState(null)
 

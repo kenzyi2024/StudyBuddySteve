@@ -32,8 +32,11 @@ export default function ListView({ events, onEdit, onToggleApprove }) {
   if (!events.length) {
     return (
       <div className="retro-panel noise p-10 text-center">
-        <p className="font-pixel text-sm text-beige">NO EVENTS LEFT</p>
-        <p className="font-mono text-xl text-cyan mt-2">Steve ate them all. Upload another syllabus?</p>
+        <p className="font-pixel text-sm text-beige">NO DATES FOUND</p>
+        <p className="font-mono text-xl text-cyan mt-2">
+          Steve didn&apos;t spot any deadlines in that file. Try a syllabus with a
+          schedule/dates, or add events manually.
+        </p>
       </div>
     )
   }

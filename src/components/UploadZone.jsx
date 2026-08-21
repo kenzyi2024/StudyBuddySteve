@@ -29,6 +29,7 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
   const [dragging, setDragging] = useState(false)
   const [files, setFiles] = useState([])
   const [phaseIndex, setPhaseIndex] = useState(-1) // -1 = idle
+  const [error, setError] = useState(null)
   const processing = phaseIndex >= 0
 
   const addFiles = useCallback((list) => {
@@ -47,26 +48,9 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
     [addFiles],
   )
 
-  // Demo fallback: play the eat → scan → done phases on a timer, then finish
-  // with no courseId so the dashboard falls back to seed data.
-  const runSimulated = useCallback(() => {
-    const timings = [1600, 2000, 1400]
-    let i = 0
-    setPhaseIndex(0)
-    const advance = () => {
-      i += 1
-      if (i < PHASES.length) {
-        setPhaseIndex(i)
-        setTimeout(advance, timings[i])
-      } else {
-        setTimeout(() => onComplete?.({ courseId: null, events: null }), 700)
-      }
-    }
-    setTimeout(advance, timings[0])
-  }, [onComplete])
-
   // Live path: upload the first file, poll the job, drive Steve from real
-  // status. If anything fails (backend offline), fall back to the demo.
+  // backend status, then hand the REAL parsed events up. On any failure we show
+  // an honest error — we never fabricate sample data.
   const startProcessing = useCallback(async () => {
     if (!files.length) return
     // Parsing persists to the user's account — require login first.
@@ -74,28 +58,36 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
       onNeedAuth?.()
       return
     }
+    setError(null)
     setPhaseIndex(0)
     try {
       const { jobId } = await uploadSyllabus(files[0])
       const job = await pollJob(jobId, {
         onPhase: (status) => setPhaseIndex(PHASE_INDEX[status] ?? 0),
       })
-      // brief beat on the "done" frame before wiping to the dashboard
-      setTimeout(
-        () => onComplete?.({ courseId: job.jobId, events: job.events || [] }),
-        700,
-      )
-    } catch (err) {
-      // Session expired mid-flight -> back to the login modal.
-      if (err?.status === 401) {
+      if (job.status === 'error') {
         setPhaseIndex(-1)
+        setError(
+          "Steve couldn't read that file. Make sure it's a PDF/DOCX with selectable text (not a photo/scan), then try again.",
+        )
+        return
+      }
+      const events = job.events || []
+      // Real result — even if empty. Hand it up; the dashboard shows the truth.
+      setTimeout(() => onComplete?.({ courseId: job.jobId, events }), 700)
+    } catch (err) {
+      setPhaseIndex(-1)
+      if (err?.status === 401) {
         onNeedAuth?.()
         return
       }
-      // Backend not reachable — keep the experience alive with the demo timeline.
-      runSimulated()
+      setError(
+        err?.status == null
+          ? "Can't reach Steve's server. Check your connection — or if you just deployed, that the API URL and CORS are set."
+          : `Upload failed (${err.status}): ${err.message}`,
+      )
     }
-  }, [files, authed, onNeedAuth, onComplete, runSimulated])
+  }, [files, authed, onNeedAuth, onComplete])
 
   const phase = PHASES[phaseIndex]
 
@@ -207,6 +199,21 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
                 onChange={(e) => addFiles(e.target.files)}
               />
             </motion.div>
+
+            {/* error banner — honest failure, never fake data */}
+            <AnimatePresence>
+              {error && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0 }}
+                  className="mt-4 flex items-start gap-2 bg-magenta text-ink border-3 border-ink shadow-chunk px-4 py-3"
+                >
+                  <span className="font-pixel text-xs shrink-0">!</span>
+                  <span className="font-mono text-lg leading-tight">{error}</span>
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* queued files */}
             <AnimatePresence>

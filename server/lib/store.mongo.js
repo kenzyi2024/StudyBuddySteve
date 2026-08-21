@@ -66,6 +66,12 @@ export async function setCourseName(userId, courseId, name) {
   await Course.updateOne({ _id: courseId, user: userId }, { name })
 }
 
+// Known event types; anything else is coerced to 'other' so an unexpected
+// type value can never fail the whole insert.
+const KNOWN_TYPES = new Set([
+  'reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other', 'assignment',
+])
+
 // --- events ---
 export async function addEvents(userId, courseId, list = []) {
   const course = await Course.findOne({ _id: courseId, user: userId })
@@ -75,14 +81,15 @@ export async function addEvents(userId, courseId, list = []) {
     user: userId,
     title: e.title || 'Untitled',
     courseName: e.course || course.name || '',
-    type: e.type || 'other',
+    type: KNOWN_TYPES.has(e.type) ? e.type : 'other',
     due: e.due ? new Date(e.due) : new Date(),
     allDay: !!e.allDay,
     approved: false,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
   }))
-  const created = await Event.insertMany(docs)
+  // ordered:false → valid events still save even if one is malformed.
+  const created = await Event.insertMany(docs, { ordered: false })
   return created.map(eventOut)
 }
 

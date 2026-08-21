@@ -3,12 +3,20 @@ import { Pencil, Check, AlertCircle, Clock } from 'lucide-react'
 import TypeBadge from './TypeBadge.jsx'
 import { fmtTime, fmtDateLong, isoDateKey } from '../../data/events.js'
 
-// Group events by day and sort chronologically.
+// Group events by day and sort chronologically. Events with an invalid/missing
+// due date are bucketed under "Undated" instead of crashing the view.
 function groupByDay(events) {
   const map = new Map()
-  for (const e of [...events].sort((a, b) => new Date(a.due) - new Date(b.due))) {
-    const key = isoDateKey(e.due)
-    if (!map.has(key)) map.set(key, { label: fmtDateLong(e.due), items: [] })
+  const valid = (iso) => iso && !Number.isNaN(new Date(iso).getTime())
+  const sorted = [...events].sort((a, b) => {
+    const ta = valid(a.due) ? new Date(a.due).getTime() : Infinity
+    const tb = valid(b.due) ? new Date(b.due).getTime() : Infinity
+    return ta - tb
+  })
+  for (const e of sorted) {
+    const key = valid(e.due) ? isoDateKey(e.due) : 'undated'
+    const label = valid(e.due) ? fmtDateLong(e.due) : 'Undated'
+    if (!map.has(key)) map.set(key, { label, items: [] })
     map.get(key).items.push(e)
   }
   return [...map.values()]

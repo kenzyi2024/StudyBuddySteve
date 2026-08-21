@@ -1,5 +1,5 @@
 import { useMemo, useState } from 'react'
-import { AnimatePresence, motion } from 'framer-motion'
+import { motion } from 'framer-motion'
 import { CalendarDays, ListChecks, ArrowLeft, CheckCheck } from 'lucide-react'
 import Steve from '../Steve.jsx'
 import RetroButton from '../RetroButton.jsx'
@@ -134,22 +134,20 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
           </RetroButton>
         </div>
 
-        {/* views */}
-        <AnimatePresence mode="wait">
-          <motion.div
-            key={tab}
-            initial={{ opacity: 0, y: 10 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -10 }}
-            transition={{ duration: 0.2 }}
-          >
-            {tab === 'calendar' ? (
-              <CalendarView events={events} onEdit={setEditing} onReschedule={reschedule} />
-            ) : (
-              <ListView events={events} onEdit={setEditing} onToggleApprove={toggleApprove} />
-            )}
-          </motion.div>
-        </AnimatePresence>
+        {/* views — keyed so React remounts on tab change; no AnimatePresence
+            wrapper (mode="wait" could leave a blank gap mid-transition). */}
+        <motion.div
+          key={tab}
+          initial={{ opacity: 0, y: 8 }}
+          animate={{ opacity: 1, y: 0 }}
+          transition={{ duration: 0.2 }}
+        >
+          {tab === 'calendar' ? (
+            <CalendarView events={events} onEdit={setEditing} onReschedule={reschedule} />
+          ) : (
+            <ListView events={events} onEdit={setEditing} onToggleApprove={toggleApprove} />
+          )}
+        </motion.div>
 
         {/* sync */}
         <SyncBar

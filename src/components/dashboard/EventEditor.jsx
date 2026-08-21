@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
-import { EVENT_TYPES } from '../../data/events.js'
+import { EVENT_TYPES, EDITABLE_TYPES } from '../../data/events.js'
 
 // Split an ISO string into <input type=date> and <input type=time> values.
 function isoToInputs(iso) {
@@ -91,9 +91,9 @@ function Inner({ event, onSave, onClose, onDelete }) {
             <div>
               <label className="font-pixel text-[10px] text-cyan block mb-1">TYPE</label>
               <select className={field} value={type} onChange={(e) => setType(e.target.value)}>
-                {Object.entries(EVENT_TYPES).map(([k, v]) => (
+                {EDITABLE_TYPES.map((k) => (
                   <option key={k} value={k}>
-                    {v.label}
+                    {EVENT_TYPES[k].label}
                   </option>
                 ))}
               </select>

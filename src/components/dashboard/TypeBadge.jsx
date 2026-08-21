@@ -1,7 +1,15 @@
-import { FileText, AlertTriangle, HelpCircle, BookOpen, Star } from 'lucide-react'
+import {
+  BookOpen,
+  PencilLine,
+  HelpCircle,
+  AlertTriangle,
+  FolderGit2,
+  Coffee,
+  Star,
+} from 'lucide-react'
 import { typeMeta } from '../../data/events.js'
 
-const ICONS = { FileText, AlertTriangle, HelpCircle, BookOpen, Star }
+const ICONS = { BookOpen, PencilLine, HelpCircle, AlertTriangle, FolderGit2, Coffee, Star }
 
 /** Small chunky pill showing an event's type with its retro color + icon. */
 export default function TypeBadge({ type, size = 'md' }) {

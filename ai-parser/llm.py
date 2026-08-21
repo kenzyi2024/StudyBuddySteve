@@ -28,16 +28,26 @@ MODEL_ANTHROPIC = os.environ.get("STEVE_ANTHROPIC_MODEL", "claude-sonnet-5")
 MODEL_OPENAI = os.environ.get("STEVE_OPENAI_MODEL", "gpt-4o-mini")
 
 SYSTEM = (
-    "You extract academic deadlines from syllabus text. Resolve every date to a "
-    "concrete calendar date, including relative ones (e.g. 'the Friday before "
-    "Thanksgiving'). Use the provided term/year for context. Respond with ONLY a "
-    "JSON object, no prose."
+    "You extract every graded item, reading, and deadline from a course syllabus. "
+    "The text may be a flattened multi-column schedule table, so associate each "
+    "task with the correct date even when they appear on different lines. Rules: "
+    "(1) One event per distinct task (each 'Submit', 'Read', 'Exam', 'Quiz'). "
+    "(2) Resolve every date to a concrete calendar date, including relative ones "
+    "('the Friday before Thanksgiving') and parenthetical ones ('(10/23/2026)'). "
+    "For a range use the END/due date; for exams that 'open ... and close ...' use "
+    "the close date/time. (3) Dated deadlines with no time are due 23:59. Readings "
+    "with no explicit date use that week's end date and allDay=true. (4) Give clean "
+    "titles (e.g. 'Submit Homework #4', 'Read Chapter 7, Sections 7.1-7.3', "
+    "'Exam 2'). Use the term/year for context. Respond with ONLY a JSON object."
 )
 
 SCHEMA_HINT = (
     'Return: {"events":[{"title":str,"type":one of '
-    '["assignment","exam","quiz","reading","other"],'
-    '"due":"YYYY-MM-DDTHH:MM:SS","allDay":bool,"confidence":0..1}]}'
+    '["reading","homework","quiz","exam","project","study","other"],'
+    '"due":"YYYY-MM-DDTHH:MM:SS","allDay":bool,"confidence":0..1}]}. '
+    'Type guide: reading=assigned reading; homework=problem sets/online problems/HW; '
+    'quiz=quizzes; exam=exams/midterms/finals; project=papers/essays/projects/proposals; '
+    'study=suggested study/prep ("start working on…","prepare for…"); other=anything else.'
 )
 
 
@@ -121,7 +131,7 @@ def _extract_json(raw: str) -> dict:
     return {}
 
 
-VALID_TYPES = {"assignment", "exam", "quiz", "reading", "other"}
+VALID_TYPES = {"reading", "homework", "quiz", "exam", "project", "study", "other"}
 
 
 def _normalize(events: list[dict]) -> list[dict]:

@@ -1,256 +1,304 @@
 """
-Turn raw syllabus text into structured calendar events.
+Turn syllabus content into structured calendar events.
 
-Two-tier by design:
-  * fast path (this module): regex + dateparser over each line — cheap, covers
-    well-formatted syllabi and schedule tables.
-  * smart path (llm.py, optional): hand messy/relative dates to an LLM.
+Parsing strategy, best-first:
+  1. LLM smart path (llm.py) — if an API key is set. Handles any layout.
+  2. Table path — for schedule tables (most syllabi). Walks each row, splits the
+     deadline cell into bullets, and dates each one. Far more accurate than flat
+     text because it never interleaves columns.
+  3. Flat-text regex — last-resort for prose syllabi with no table.
 
-Every event carries a confidence score and source snippet so the review UI can
-flag the ones a human should double-check.
+Every event: {title, type, due (ISO), allDay, confidence, source}.
+Types: reading | homework | quiz | exam | project | study | other.
 """
 from __future__ import annotations
 
 import re
-from datetime import datetime
+from datetime import datetime, timedelta
 
-try:  # dateparser is the preferred engine; fall back if unavailable
+try:
     import dateparser
-
     _HAS_DATEPARSER = True
 except Exception:  # pragma: no cover
     dateparser = None
     _HAS_DATEPARSER = False
 
 
-# --- event typing ------------------------------------------------------
-
-# Ordered: earlier keywords win when several match.
-TYPE_KEYWORDS = [
-    ("exam", ["final exam", "midterm", "exam", "test"]),
-    ("quiz", ["quiz"]),
-    ("assignment", ["problem set", "pset", "assignment", "homework", "hw",
-                    "lab", "project", "essay", "paper", "report", "due"]),
-    ("reading", ["reading", "read ", "chapter", "ch.", "textbook"]),
-]
-
-MONTHS = ("jan|feb|mar|apr|may|jun|jul|aug|sep|sept|oct|nov|dec"
-          "|january|february|march|april|june|july|august|september"
-          "|october|november|december")
-
-# Matches: "Oct 20", "October 20th", "10/20", "10/20/2026", "2026-10-20"
-DATE_PATTERNS = [
-    re.compile(rf"\b(?:{MONTHS})\.?\s+\d{{1,2}}(?:st|nd|rd|th)?(?:,?\s*\d{{4}})?\b", re.I),
-    re.compile(r"\b\d{1,2}/\d{1,2}(?:/\d{2,4})?\b"),
-    re.compile(r"\b\d{4}-\d{1,2}-\d{1,2}\b"),
-]
-
-TIME_PATTERN = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)\b", re.I)
-
-# Header hints for course code + term.
+MONTHS_RE = (r"(?:Jan|Feb|Mar|Apr|May|Jun|Jul|Aug|Sep|Sept|Oct|Nov|Dec)[a-z]*\.?")
+NUM_DATE = re.compile(r"\b(\d{1,2}/\d{1,2}/\d{2,4})\b")
+MON_DATE = re.compile(rf"\b({MONTHS_RE}\s+\d{{1,2}})(?:,?\s*(\d{{4}}))?", re.I)
+TIME_RE = re.compile(r"\b(\d{1,2})(?::(\d{2}))?\s*([ap]\.?m\.?)\b", re.I)
+WEEK_LINE = re.compile(r"(?i)^\s*week\s*\d")
 COURSE_CODE = re.compile(r"\b([A-Z]{2,4})\s?-?\s?(\d{2,4}[A-Z]?)\b")
 TERM_RE = re.compile(r"\b(fall|spring|summer|winter)\s+(\d{4})\b", re.I)
 
-
-def guess_type(context: str) -> str:
-    low = context.lower()
-    for label, kws in TYPE_KEYWORDS:
-        if any(kw in low for kw in kws):
-            return label
-    return "other"
+# Insert bullet boundaries before action verbs so merged cells split cleanly.
+VERB_SPLIT = re.compile(
+    r"(?<=[a-z0-9)\.]) (?=(?:Submit|Read|Review|Start|Prepare|Complete|Watch|Install|Take|Brief|Quiz|Exam)\b)"
+)
 
 
-def find_course(text: str) -> str | None:
-    """Infer a course code from the first chunk of the document."""
-    head = "\n".join(text.splitlines()[:15])
-    m = COURSE_CODE.search(head)
-    return f"{m.group(1)} {m.group(2)}" if m else None
-
-
-def find_term(text: str) -> str | None:
-    head = "\n".join(text.splitlines()[:20])
-    m = TERM_RE.search(head)
-    return f"{m.group(1).title()} {m.group(2)}" if m else None
-
-
-def _parse_date(raw: str, base_year: int | None) -> datetime | None:
-    settings = {"PREFER_DATES_FROM": "future"}
-    if base_year:
-        settings["RELATIVE_BASE"] = datetime(base_year, 1, 1)
+def _parse(s: str):
+    if not s:
+        return None
     if _HAS_DATEPARSER:
-        return dateparser.parse(raw, settings=settings)
-    return _fallback_parse(raw, base_year)
-
-
-def _fallback_parse(raw: str, base_year: int | None) -> datetime | None:
-    """Minimal parser used only when dateparser isn't installed."""
-    raw = raw.strip()
-    year = base_year or datetime.now().year
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%Y-%m-%d"):
+        return dateparser.parse(s, settings={"PREFER_DATES_FROM": "future"})
+    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%B %d %Y", "%b %d %Y", "%B %d", "%b %d"):
         try:
-            return datetime.strptime(raw, fmt)
-        except ValueError:
-            pass
-    # "Oct 20" / "October 20th"
-    cleaned = re.sub(r"(st|nd|rd|th)", "", raw, flags=re.I)
-    for fmt in ("%b %d", "%B %d", "%b %d %Y", "%B %d %Y"):
-        try:
-            dt = datetime.strptime(cleaned, fmt)
-            return dt.replace(year=year) if dt.year == 1900 else dt
+            return datetime.strptime(s.strip(), fmt)
         except ValueError:
             pass
     return None
 
 
-TYPE_HINT_WORDS = re.compile(
-    r"\b(exam|midterm|final|quiz|test|problem set|pset|assignment|homework|hw|"
-    r"lab|project|essay|paper|report|reading|response|proposal|draft)\b",
-    re.I,
-)
-# Noise to strip from candidate titles: times, "due", table week markers, "at".
-NOISE = re.compile(
-    r"(\b\d{1,2}(?::\d{2})?\s*[ap]\.?m\.?\b"      # 11:59pm
-    r"|\bfrom\b|\bto\b|\bat\b|\bdue\b"            # filler words
-    r"|\bweek\s*\d+\b)",                          # "Week 5"
-    re.I,
-)
+def _clamp_year(dt, base_year):
+    # syllabi often have a stray wrong year ("Nov 2 - Nov 6, 2025"); snap up.
+    if dt and base_year and dt.year < base_year:
+        return dt.replace(year=base_year)
+    return dt
 
 
-def _clean(fragment: str) -> str:
-    fragment = re.sub(r"[|\t]+", " ", fragment)
-    fragment = NOISE.sub(" ", fragment)
-    fragment = fragment.strip(" -–—:•.,\t")
-    return re.sub(r"\s+", " ", fragment)
+# --- typing ------------------------------------------------------------
+
+def classify(text: str) -> str:
+    s = text.lower()
+    if "prepar" in s or "start working" in s or "review all" in s:
+        return "study"
+    if "exam" in s or "midterm" in s or "final" in s and "exam" in s:
+        return "exam"
+    if "quiz" in s:
+        return "quiz"
+    if s.startswith("read") or ("chapter" in s and "section" in s and "submit" not in s):
+        return "reading"
+    if "online problem" in s or "problem set" in s or "pset" in s:
+        return "homework"
+    if "homework" in s or re.search(r"\bhw\b", s):
+        return "homework"
+    if "project" in s or "proposal" in s or "paper" in s or "essay" in s:
+        return "project"
+    if "read" in s:
+        return "reading"
+    return "other"
 
 
-def _title_from(line: str, date_span: tuple[int, int]) -> str:
-    """Use the text around the date as the event title, cleaned up.
+# --- header inference --------------------------------------------------
 
-    Prefer whichever side names an actual deliverable (exam, quiz, essay…);
-    otherwise fall back to the side with more words. Times and filler words are
-    stripped so titles read cleanly.
-    """
-    before = _clean(line[: date_span[0]])
-    after = _clean(line[date_span[1]:])
-
-    before_has = bool(TYPE_HINT_WORDS.search(before))
-    after_has = bool(TYPE_HINT_WORDS.search(after))
-
-    if before_has and not after_has:
-        candidate = before
-    elif after_has and not before_has:
-        candidate = after
-    else:
-        candidate = before if len(before.split()) >= len(after.split()) else after
-
-    return candidate[:120] or "Deadline"
+def find_course(text: str):
+    head = "\n".join(text.splitlines()[:15])
+    m = COURSE_CODE.search(head)
+    return f"{m.group(1)} {m.group(2)}" if m else None
 
 
-def _confidence(raw_date: str, had_time: bool, type_: str) -> float:
-    score = 0.6
-    if re.search(r"\d{4}", raw_date) or "/" in raw_date:
-        score += 0.15  # explicit numeric date
-    if had_time:
-        score += 0.1
-    if type_ != "other":
-        score += 0.1
-    return round(min(score, 0.99), 2)
+def find_term(text: str):
+    head = "\n".join(text.splitlines()[:25])
+    m = TERM_RE.search(head)
+    return f"{m.group(1).title()} {m.group(2)}" if m else None
 
 
-def extract_events(text: str) -> list[dict]:
-    base_year = None
-    term = find_term(text)
+def _base_year(text: str, term):
     if term:
-        base_year = int(term.split()[-1])
+        return int(term.split()[-1])
+    m = re.search(r"\b(20\d{2})\b", text)
+    return int(m.group(1)) if m else datetime.now().year
 
-    seen: set[tuple[str, str]] = set()
-    events: list[dict] = []
 
-    for line in text.splitlines():
-        line = line.strip()
-        if len(line) < 4:
+# --- table path --------------------------------------------------------
+
+def _week_end(cell: str, base_year: int):
+    flat = cell.replace("\n", " ")
+    yr = re.search(r"\b(20\d{2})\b", flat)
+    y = int(yr.group(1)) if yr else base_year
+    months = MON_DATE.findall(flat)
+    if months:
+        return _clamp_year(_parse(f"{months[-1][0]} {y}"), base_year)
+    return None
+
+
+def _bullets(cell: str, week_end, base_year: int) -> list[dict]:
+    flat = re.sub(r"\s*\n\s*", " ", cell)
+    flat = VERB_SPLIT.sub(" • ", flat)
+    out = []
+    for part in flat.split("•"):
+        p = part.strip(" -•\t")
+        if len(p) < 5 or WEEK_LINE.search(p):
             continue
-
-        for pat in DATE_PATTERNS:
-            m = pat.search(line)
-            if not m:
-                continue
-            raw_date = m.group(0)
-            dt = _parse_date(raw_date, base_year)
-            if not dt:
-                continue
-
-            # attach a time if the line has one
-            had_time = False
-            tm = TIME_PATTERN.search(line)
-            if tm:
-                hh = int(tm.group(1)) % 12
-                if tm.group(3).lower().startswith("p"):
+        nums = NUM_DATE.findall(p)
+        due = None
+        all_day = True
+        if nums:
+            due = _clamp_year(_parse(nums[-1]), base_year)
+            all_day = False
+            tm = TIME_RE.findall(p)
+            if tm and due:
+                hh = int(tm[-1][0]) % 12
+                if tm[-1][2].lower().startswith("p"):
                     hh += 12
-                mm = int(tm.group(2) or 0)
-                dt = dt.replace(hour=hh, minute=mm)
-                had_time = True
+                due = due.replace(hour=hh, minute=int(tm[-1][1] or 0))
+            elif due:
+                due = due.replace(hour=23, minute=59)  # dated deadline -> end of day
+        else:
+            due = week_end
+        if not due:
+            continue
+        title = re.sub(r"\([^)]*\d{1,2}/\d{1,2}/\d{2,4}[^)]*\)", "", p)
+        if "exam" in p.lower():
+            title = re.sub(r"\bopens?\b.*$", "", title, flags=re.I)
+        title = re.sub(r"\s+", " ", title).strip(" .,-")
+        if len(title) < 4 or not re.search(r"[A-Za-z]", title):
+            continue
+        out.append(
+            {
+                "title": title[:120],
+                "type": classify(p),
+                "due": due,
+                "allDay": all_day,
+                "confidence": 0.9 if not all_day else 0.75,
+            }
+        )
+    return out
 
-            title = _title_from(line, m.span())
-            type_ = guess_type(line)
 
-            key = (title.lower(), dt.strftime("%Y-%m-%d"))
-            if key in seen:
-                break
-            seen.add(key)
-
-            events.append(
-                {
-                    "title": title,
-                    "type": type_,
-                    "due": dt.replace(second=0, microsecond=0).isoformat(),
-                    "allDay": not had_time,
-                    "confidence": _confidence(raw_date, had_time, type_),
-                    "source": {"snippet": line[:160]},
-                }
+def _events_from_tables(tables, base_year: int) -> list[dict]:
+    events = []
+    for table in tables:
+        for row in table:
+            cells = [c or "" for c in row]
+            if not any(cells):
+                continue
+            week_cell = next((c for c in cells if re.search(r"(?i)week\s*\d", c)), cells[0])
+            # the deadline cell has the most bullets / submit / read cues
+            deadline_cell = max(
+                cells,
+                key=lambda c: c.count("•") + c.lower().count("submit") + c.lower().count("read"),
             )
-            break  # one event per line
-
-    events.sort(key=lambda e: e["due"])
+            events += _bullets(deadline_cell, _week_end(week_cell, base_year), base_year)
     return events
 
 
-def _merge_events(fast: list[dict], smart: list[dict]) -> list[dict]:
-    """Combine fast-path and LLM events, deduping on (title, date) and keeping
-    whichever has the higher confidence."""
-    by_key: dict[tuple[str, str], dict] = {}
-    for e in fast + smart:
-        key = (e["title"].lower().strip(), e["due"][:10])
-        existing = by_key.get(key)
-        if existing is None or e.get("confidence", 0) > existing.get("confidence", 0):
-            by_key[key] = e
-    merged = list(by_key.values())
-    merged.sort(key=lambda e: e["due"])
-    return merged
+# --- flat-text fallback ------------------------------------------------
+
+def _events_from_text(text: str, base_year: int) -> list[dict]:
+    events = []
+    for line in text.splitlines():
+        line = line.strip()
+        if len(line) < 5 or WEEK_LINE.search(line):
+            continue
+        m = NUM_DATE.search(line) or MON_DATE.search(line)
+        if not m:
+            continue
+        due = _clamp_year(_parse(m.group(0)), base_year)
+        if not due:
+            continue
+        tm = TIME_RE.search(line)
+        all_day = True
+        if tm:
+            hh = int(tm.group(1)) % 12
+            if tm.group(3).lower().startswith("p"):
+                hh += 12
+            due = due.replace(hour=hh, minute=int(tm.group(2) or 0))
+            all_day = False
+        else:
+            due = due.replace(hour=23, minute=59)
+            all_day = False
+        title = re.sub(r"\([^)]*\)", "", line[: m.start()] + " " + line[m.end():])
+        title = re.sub(r"\s+", " ", title).strip(" .,-:•")
+        if len(title) < 4:
+            continue
+        events.append(
+            {"title": title[:120], "type": classify(line), "due": due, "allDay": all_day, "confidence": 0.6}
+        )
+    return events
 
 
-def parse_text(text: str, use_llm: bool = True) -> dict:
+# --- study-session generation -----------------------------------------
+
+def _study_sessions(events: list[dict]) -> list[dict]:
+    extra = []
+    for e in events:
+        if e["type"] == "exam" and e.get("due"):
+            for days, label in ((3, "Study session"), (1, "Final review")):
+                d = e["due"] - timedelta(days=days)
+                extra.append(
+                    {
+                        "title": f"{label}: {e['title'][:50]}",
+                        "type": "study",
+                        "due": d.replace(hour=0, minute=0),
+                        "allDay": True,
+                        "confidence": 0.7,
+                        "suggested": True,
+                    }
+                )
+    return extra
+
+
+# --- dedupe + finalize -------------------------------------------------
+
+def _dedupe(events: list[dict]) -> list[dict]:
+    seen = {}
+    for e in sorted(events, key=lambda x: x["due"]):
+        key = re.sub(r"[^a-z0-9]", "", e["title"].lower())
+        if key and key not in seen:
+            seen[key] = e
+    return list(seen.values())
+
+
+def _to_iso(events: list[dict]) -> list[dict]:
+    for e in events:
+        due = e["due"]
+        e["due"] = (due.replace(second=0, microsecond=0).isoformat() if hasattr(due, "isoformat") else str(due))
+        e.setdefault("source", {"method": "table"})
+    return events
+
+
+# --- entry point -------------------------------------------------------
+
+def parse(extraction: dict, use_llm: bool = True) -> dict:
+    """extraction = {'text': str, 'tables': [...]} from extractor.extract()."""
+    text = extraction.get("text", "") or ""
+    tables = extraction.get("tables", []) or []
     term = find_term(text)
-    base_year = int(term.split()[-1]) if term else None
+    base_year = _base_year(text, term)
 
-    events = extract_events(text)
+    events: list[dict] = []
+    method = "table"
 
-    # Smart path: only worth an LLM round-trip when the text actually contains
-    # relative-date phrasing the regex layer can't resolve. Env-gated + safe.
-    llm_used = False
+    # 1) LLM path (best) if configured
     if use_llm:
-        from llm import smart_available, has_relative_dates, extract_events_llm
+        try:
+            from llm import smart_available, extract_events_llm
 
-        if smart_available() and has_relative_dates(text):
-            smart = extract_events_llm(text, term, base_year)
-            if smart:
-                events = _merge_events(events, smart)
-                llm_used = True
+            if smart_available():
+                llm_events = extract_events_llm(text, term, base_year)
+                if llm_events:
+                    events = llm_events
+                    method = "llm"
+        except Exception:
+            pass
+
+    # 2) table path
+    if not events and tables:
+        events = _events_from_tables(tables, base_year)
+        method = "table"
+
+    # 3) flat-text fallback
+    if not events:
+        events = _events_from_text(text, base_year)
+        method = "text"
+
+    events = _dedupe(events)
+    events += _study_sessions([e for e in events if e["type"] == "exam"])
+    events.sort(key=lambda x: x["due"])
+    events = _to_iso(events)
 
     return {
         "course": find_course(text),
         "term": term,
+        "method": method,
         "parsedAt": datetime.utcnow().isoformat(),
-        "smartPath": llm_used,
         "events": events,
     }
+
+
+# Backwards-compatible wrapper (text-only callers).
+def parse_text(text: str, use_llm: bool = True) -> dict:
+    return parse({"text": text, "tables": []}, use_llm=use_llm)

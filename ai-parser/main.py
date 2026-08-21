@@ -11,8 +11,8 @@ from __future__ import annotations
 
 from fastapi import FastAPI, File, HTTPException, UploadFile
 
-from extractor import extract_text
-from parser import parse_text
+from extractor import extract
+from parser import parse
 
 app = FastAPI(title="Study Buddy Steve Parser", version="0.2.0")
 
@@ -29,9 +29,8 @@ async def parse(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="Empty file")
 
     try:
-        text = extract_text(file.filename or "upload", data)
+        extraction = extract(file.filename or "upload", data)
     except ImportError as e:
-        # A required extractor dependency isn't installed.
         raise HTTPException(
             status_code=501,
             detail=f"Extraction dependency missing: {e}. See requirements.txt.",
@@ -39,7 +38,8 @@ async def parse(file: UploadFile = File(...)):
     except Exception as e:  # pragma: no cover
         raise HTTPException(status_code=422, detail=f"Could not read file: {e}")
 
-    result = parse_text(text)
+    result = parse(extraction)
     result["filename"] = file.filename
-    result["charCount"] = len(text)
+    result["charCount"] = len(extraction.get("text", ""))
+    result["tableCount"] = len(extraction.get("tables", []))
     return result

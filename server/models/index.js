@@ -48,7 +48,11 @@ const EventSchema = new Schema(
     user: { type: Schema.Types.ObjectId, ref: 'User', required: true, index: true },
     title: { type: String, required: true },
     courseName: String, // denormalized label for display
-    type: { type: String, enum: ['assignment', 'exam', 'quiz', 'reading', 'other'], default: 'other' },
+    type: {
+      type: String,
+      enum: ['reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other', 'assignment'],
+      default: 'other',
+    },
     due: { type: Date, required: true },
     allDay: { type: Boolean, default: false },
     approved: { type: Boolean, default: false },

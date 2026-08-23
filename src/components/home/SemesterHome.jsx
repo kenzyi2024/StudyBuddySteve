@@ -137,6 +137,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     [courseMap],
   )
   const courseColor = (name) => courseMap.get(name || 'Course')?.name || 'cyan'
+  const courseHex = (name) => courseMap.get(name || 'Course')?.hex || '#22e0ff'
 
   // Events scoped to the active course filter (drives every view below).
   const scoped = useMemo(
@@ -227,8 +228,14 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     return (
       <motion.div
         layout
-        className={`retro-panel noise flex items-center gap-3 p-3 shadow-chunk ${e.done ? 'opacity-60' : ''}`}
+        className={`retro-panel noise flex items-center gap-3 p-3 pl-2 shadow-chunk overflow-hidden ${e.done ? 'opacity-60' : ''}`}
       >
+        {/* per-course color stripe */}
+        <span
+          aria-hidden
+          className="self-stretch w-2 -my-3 -ml-2 mr-1 shrink-0"
+          style={{ backgroundColor: courseHex(e.course) }}
+        />
         <button
           onClick={() => toggleDone(e.id)}
           aria-label={e.done ? 'Mark not done' : 'Mark done'}

@@ -11,6 +11,7 @@ import {
   patchEvent,
   deleteEvent as apiDeleteEvent,
   approveCourse,
+  commitCourse,
   calendarIcsUrl,
 } from '../../lib/api.js'
 
@@ -28,6 +29,7 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
   const [events, setEvents] = useState(() => initialEvents ?? [])
   const [tab, setTab] = useState('calendar') // 'calendar' | 'list'
   const [editing, setEditing] = useState(null)
+  const [committing, setCommitting] = useState(false)
 
   const live = !!courseId // when false, mutations stay local-only
 
@@ -157,17 +159,33 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
           icsUrl={courseId ? calendarIcsUrl(courseId) : null}
         />
 
-        {/* save & finish — events are already saved to the account; this just
-            takes the student to their saved calendar. */}
+        {/* approve gate — nothing reaches the calendar until the student
+            approves here. Edit/delete above first, then commit. */}
         <div className="retro-panel noise p-5 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-chunk-lg">
           <div>
-            <p className="font-pixel text-xs text-lime">SAVED TO YOUR ACCOUNT ✓</p>
+            <p className="font-pixel text-xs text-amber">REVIEW BEFORE ADDING</p>
             <p className="font-mono text-lg text-beige/70 mt-1">
-              These {events.length} items live in your calendar on every device.
+              Edit or delete anything wrong above. These {events.length} items are{' '}
+              <span className="text-amber">not</span> in your calendar until you approve.
             </p>
           </div>
-          <RetroButton color="lime" size="lg" onClick={onBack}>
-            ▸ View My Calendar
+          <RetroButton
+            color="lime"
+            size="lg"
+            disabled={committing}
+            onClick={async () => {
+              setCommitting(true)
+              if (courseId) {
+                try {
+                  await commitCourse(courseId)
+                } catch {
+                  /* ignore — onBack still refetches */
+                }
+              }
+              onBack()
+            }}
+          >
+            {committing ? 'ADDING…' : '✓ Approve & Add to Calendar'}
           </RetroButton>
         </div>
       </main>

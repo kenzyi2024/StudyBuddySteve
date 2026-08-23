@@ -31,6 +31,7 @@ function eventOut(e) {
     due: e.due instanceof Date ? e.due.toISOString() : e.due,
     allDay: !!e.allDay,
     approved: !!e.approved,
+    committed: e.committed !== false,
     done: !!e.done,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
@@ -88,6 +89,7 @@ export async function addEvents(userId, courseId, list = []) {
     due: e.due ? new Date(e.due) : new Date(),
     allDay: !!e.allDay,
     approved: false,
+    committed: false, // awaits the student's approval before hitting the calendar
     done: false,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
@@ -117,10 +119,16 @@ export async function updateEvent(userId, eventId, patch) {
   return eventOut(e)
 }
 
-// All events across the user's courses (for the account calendar / task list).
+// All COMMITTED events across the user's courses (account calendar / task list).
 export async function allEventsForUser(userId) {
-  const list = await Event.find({ user: userId }).sort({ due: 1 })
+  const list = await Event.find({ user: userId, committed: { $ne: false } }).sort({ due: 1 })
   return list.map(eventOut)
+}
+
+// Approve a course's parsed events → they now appear in the calendar.
+export async function commitCourse(userId, courseId) {
+  await Event.updateMany({ course: courseId, user: userId }, { committed: true })
+  return eventsForCourse(userId, courseId)
 }
 
 export async function deleteEvent(userId, eventId) {
@@ -156,6 +164,7 @@ export async function dueSoonUnreminded(hours = 24) {
   const list = await Event.find({
     done: false,
     reminded: { $ne: true },
+    committed: { $ne: false },
     due: { $gte: now, $lte: until },
   }).sort({ due: 1 })
   return list.map((e) => ({

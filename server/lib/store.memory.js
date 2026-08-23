@@ -30,6 +30,7 @@ function eventOut(e) {
     due: e.due instanceof Date ? e.due.toISOString() : e.due,
     allDay: !!e.allDay,
     approved: !!e.approved,
+    committed: e.committed !== false,
     done: !!e.done,
     confidence: e.confidence ?? 0.5,
     source: e.source || null,
@@ -100,6 +101,7 @@ export async function addEvents(userId, courseId, list = []) {
       due: e.due ? new Date(e.due) : new Date(),
       allDay: !!e.allDay,
       approved: false,
+      committed: false, // awaits approval
       done: false,
       reminded: false,
       confidence: e.confidence ?? 0.5,
@@ -130,12 +132,19 @@ export async function updateEvent(userId, eventId, patch) {
   return eventOut(e)
 }
 
-// All events across the user's courses.
+// All COMMITTED events across the user's courses.
 export async function allEventsForUser(userId) {
   return [...events.values()]
-    .filter((e) => e.user === userId)
+    .filter((e) => e.user === userId && e.committed !== false)
     .sort((a, b) => new Date(a.due) - new Date(b.due))
     .map(eventOut)
+}
+
+export async function commitCourse(userId, courseId) {
+  for (const e of events.values()) {
+    if (e.user === userId && e.course === courseId) e.committed = true
+  }
+  return eventsForCourse(userId, courseId)
 }
 export async function deleteEvent(userId, eventId) {
   const e = events.get(eventId)
@@ -169,7 +178,7 @@ export async function dueSoonUnreminded(hours = 24) {
   return [...events.values()]
     .filter((e) => {
       const t = new Date(e.due).getTime()
-      return !e.done && !e.reminded && t >= now && t <= until
+      return !e.done && !e.reminded && e.committed !== false && t >= now && t <= until
     })
     .sort((a, b) => new Date(a.due) - new Date(b.due))
     .map((e) => ({

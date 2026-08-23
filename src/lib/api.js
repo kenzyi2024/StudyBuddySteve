@@ -134,6 +134,11 @@ export async function approveCourse(courseId) {
   return json(await req(`/courses/${courseId}/approve`, { method: 'POST' }))
 }
 
+// Commit parsed events to the account calendar (after the student reviews them).
+export async function commitCourse(courseId) {
+  return json(await req(`/courses/${courseId}/commit`, { method: 'POST' }))
+}
+
 // All of the signed-in user's events across every course.
 export async function getMyEvents() {
   return json(await req('/me/events'))

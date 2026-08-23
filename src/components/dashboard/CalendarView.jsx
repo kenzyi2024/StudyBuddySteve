@@ -117,6 +117,16 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
           <ModeBtn id="day" label="Day" />
         </div>
         <div className="flex items-center gap-2">
+          <RetroButton
+            color="lime"
+            size="sm"
+            onClick={() => {
+              const n = new Date()
+              setCursor(new Date(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())))
+            }}
+          >
+            Today
+          </RetroButton>
           <RetroButton color="cyan" size="sm" onClick={() => step(-1)}>
             <ChevronLeft size={16} />
           </RetroButton>

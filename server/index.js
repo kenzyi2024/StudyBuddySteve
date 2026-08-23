@@ -179,6 +179,14 @@ app.post('/api/courses/:id/approve', requireAuth, async (req, res) => {
   res.json({ approved: events.length, events })
 })
 
+// Commit a course's parsed events to the account calendar (student approval).
+app.post('/api/courses/:id/commit', requireAuth, async (req, res) => {
+  if (!(await store.getCourse(req.userId, req.params.id)))
+    return res.status(404).json({ error: 'Unknown course' })
+  const events = await store.commitCourse(req.userId, req.params.id)
+  res.json({ committed: events.length, events })
+})
+
 // ------------------------------------------------------------------
 //  Universal .ics (auth-scoped)
 // ------------------------------------------------------------------

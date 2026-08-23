@@ -59,6 +59,9 @@ const EventSchema = new Schema(
     due: { type: Date, required: true },
     allDay: { type: Boolean, default: false },
     approved: { type: Boolean, default: false },
+    // committed=false means "parsed, awaiting the student's approval". The
+    // account calendar/reminders only show committed events.
+    committed: { type: Boolean, default: true },
     done: { type: Boolean, default: false }, // student checked it off
     reminded: { type: Boolean, default: false }, // a push reminder was sent
     confidence: Number,

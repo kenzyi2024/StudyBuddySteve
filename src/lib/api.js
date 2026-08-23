@@ -173,6 +173,15 @@ export async function subscribePush(subscription) {
     }),
   )
 }
+export async function unsubscribePush(endpoint) {
+  return json(
+    await req('/push/unsubscribe', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ endpoint }),
+    }),
+  )
+}
 
 // Absolute URL for the whole-account .ics (subscribe/download).
 export function myCalendarIcsUrl({ reminder } = {}) {

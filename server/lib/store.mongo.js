@@ -155,6 +155,14 @@ export async function getPushSubs(userId) {
   return u?.pushSubs || []
 }
 
+// --- reminder prefs (SMS) ---
+export async function setReminderPrefs(userId, { phone, smsEnabled }) {
+  const patch = {}
+  if (phone !== undefined) patch.phone = phone
+  if (smsEnabled !== undefined) patch.smsEnabled = !!smsEnabled
+  await User.updateOne({ _id: userId }, patch)
+}
+
 // --- reminders ---
 // Events due within `hours`, not done, not yet reminded. Returns raw rows with
 // userId so the cron can group + push.

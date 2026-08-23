@@ -144,7 +144,23 @@ export async function getMyEvents() {
   return json(await req('/me/events'))
 }
 
-// --- web push ---
+// --- reminders / web push ---
+export async function reminderStatus() {
+  try {
+    return await json(await req('/reminders/status'))
+  } catch {
+    return { push: false, sms: false }
+  }
+}
+export async function saveReminderPrefs({ phone, smsEnabled }) {
+  return json(
+    await req('/me/reminders', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ phone, smsEnabled }),
+    }),
+  )
+}
 export async function getPushKey() {
   return json(await req('/push/key'))
 }

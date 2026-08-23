@@ -20,22 +20,9 @@ import RetroButton from '../RetroButton.jsx'
 import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
+import RemindersModal from './RemindersModal.jsx'
 import { fmtTime, fmtDateLong, typeMeta, courseColors } from '../../data/events.js'
-import {
-  patchEvent,
-  deleteEvent as apiDeleteEvent,
-  myCalendarIcsUrl,
-  getPushKey,
-  subscribePush,
-} from '../../lib/api.js'
-
-// Convert a base64url VAPID key to the Uint8Array the Push API expects.
-function urlB64ToUint8Array(base64) {
-  const padding = '='.repeat((4 - (base64.length % 4)) % 4)
-  const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
-  const raw = atob(b64)
-  return Uint8Array.from([...raw].map((c) => c.charCodeAt(0)))
-}
+import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl } from '../../lib/api.js'
 
 // Whole-day difference between an event's wall-clock date and today.
 function daysUntil(iso) {
@@ -71,6 +58,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
   const [notify, setNotify] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted',
   )
+  const [remindersOpen, setRemindersOpen] = useState(false)
   const notifiedRef = useRef(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
 
   useEffect(() => setEvents(initialEvents), [initialEvents])
@@ -171,29 +159,8 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     [scoped],
   )
 
-  // --- reminders: background push (works when the app is closed) with an
-  //     in-page notification fallback when push isn't available/configured ---
-  const enableReminders = async () => {
-    if (typeof Notification === 'undefined') return
-    const perm = await Notification.requestPermission()
-    if (perm !== 'granted') return
-    setNotify(true)
-    try {
-      if (!('serviceWorker' in navigator) || !('PushManager' in window)) return
-      const { key } = await getPushKey()
-      if (!key) return // server push not configured; keep in-page reminders
-      const reg = await navigator.serviceWorker.register('/sw.js')
-      await navigator.serviceWorker.ready
-      const sub = await reg.pushManager.subscribe({
-        userVisibleOnly: true,
-        applicationServerKey: urlB64ToUint8Array(key),
-      })
-      await subscribePush(sub)
-    } catch {
-      /* push subscribe failed — in-page reminders still work */
-    }
-  }
-
+  // In-page reminders while the app is open (device push, SMS, and calendar
+  // sync are all handled by the RemindersModal).
   useEffect(() => {
     if (!notify || typeof Notification === 'undefined' || Notification.permission !== 'granted') return
     const soon = events.filter((e) => !e.done && daysUntil(e.due) >= 0 && daysUntil(e.due) <= 1)
@@ -311,11 +278,11 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
             <RetroButton
               color={notify ? 'cyan' : 'amber'}
               size="sm"
-              onClick={enableReminders}
-              title="Get browser reminders for deadlines due within 24h (while the app is open)"
+              onClick={() => setRemindersOpen(true)}
+              title="Set up reminders: device notifications, texts, and calendar sync"
             >
               {notify ? <BellRing size={15} /> : <Bell size={15} />}
-              {notify ? 'Reminders on' : 'Reminders'}
+              Reminders
             </RetroButton>
             <RetroButton
               color="lime"
@@ -471,6 +438,15 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
         onSave={saveEvent}
         onClose={() => setEditing(null)}
         onDelete={deleteEvent}
+      />
+
+      <RemindersModal
+        open={remindersOpen}
+        user={user}
+        onClose={() => {
+          setRemindersOpen(false)
+          if (typeof Notification !== 'undefined') setNotify(Notification.permission === 'granted')
+        }}
       />
     </div>
   )

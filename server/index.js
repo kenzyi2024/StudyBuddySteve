@@ -26,6 +26,7 @@ import {
 } from './lib/oauth.js'
 import { pushEvents } from './lib/calendarSync.js'
 import { initPush, pushEnabled, publicKey, sendPush } from './lib/push.js'
+import { initSms, smsEnabled, sendSms } from './lib/sms.js'
 
 dotenv.config()
 
@@ -72,7 +73,13 @@ app.get('/api/health', (_req, res) => {
 // ------------------------------------------------------------------
 //  Auth
 // ------------------------------------------------------------------
-const publicUser = (u) => ({ id: String(u._id), email: u.email, name: u.name || '' })
+const publicUser = (u) => ({
+  id: String(u._id),
+  email: u.email,
+  name: u.name || '',
+  phone: u.phone || '',
+  smsEnabled: !!u.smsEnabled,
+})
 
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, name } = req.body || {}
@@ -232,6 +239,25 @@ app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
   res.json({ ok: true })
 })
 
+// Which reminder channels are available server-side (frontend hides the rest).
+app.get('/api/reminders/status', (_req, res) => {
+  res.json({ push: pushEnabled(), sms: smsEnabled() })
+})
+
+// Save SMS reminder preferences (phone number + opt-in).
+app.post('/api/me/reminders', requireAuth, async (req, res) => {
+  const { phone, smsEnabled: sms } = req.body || {}
+  if (sms && !/^\+?[1-9]\d{7,14}$/.test((phone || '').replace(/[\s()-]/g, ''))) {
+    return res.status(400).json({ error: 'Enter a valid phone number in international format, e.g. +15551234567' })
+  }
+  await store.setReminderPrefs(req.userId, {
+    phone: (phone || '').replace(/[\s()-]/g, ''),
+    smsEnabled: !!sms,
+  })
+  const user = await store.getUserById(req.userId)
+  res.json({ user: publicUser(user) })
+})
+
 // Reminder sender — triggered by Cloud Scheduler (NOT a user). Protected by a
 // shared secret so only the scheduler can invoke it. Finds deadlines due soon,
 // groups by user, sends one push digest each, and marks them reminded.
@@ -240,34 +266,54 @@ app.post('/api/cron/send-reminders', async (req, res) => {
   if (!secret || req.headers['x-cron-key'] !== secret) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  if (!pushEnabled()) return res.json({ sent: 0, note: 'push disabled (set VAPID keys)' })
+  if (!pushEnabled() && !smsEnabled()) {
+    return res.json({ sent: 0, note: 'no channels configured (set VAPID and/or Twilio keys)' })
+  }
 
   const hours = Number(req.query.hours) || 24
   const due = await store.dueSoonUnreminded(hours)
   const byUser = {}
   for (const e of due) (byUser[e.userId] ||= []).push(e)
 
-  let sent = 0
+  let pushSent = 0
+  let smsSent = 0
   const remindedIds = []
   for (const [userId, items] of Object.entries(byUser)) {
-    const subs = await store.getPushSubs(userId)
-    if (!subs.length) continue
     const title = items.length === 1 ? '⏰ 1 deadline coming up' : `⏰ ${items.length} deadlines coming up`
-    const body = items.slice(0, 4).map((i) => `• ${i.title}${i.course ? ` (${i.course})` : ''}`).join('\n')
+    const lines = items.slice(0, 4).map((i) => `• ${i.title}${i.course ? ` (${i.course})` : ''}`)
+    const body = lines.join('\n')
+    let delivered = false
+
+    // 1) device push
+    const subs = pushEnabled() ? await store.getPushSubs(userId) : []
     for (const sub of subs) {
       try {
         await sendPush(sub, { title, body, url: FRONTEND_URL })
-        sent++
+        pushSent++
+        delivered = true
       } catch (err) {
-        if (err.statusCode === 404 || err.statusCode === 410) {
-          await store.removePushSub(userId, sub.endpoint) // subscription expired
+        if (err.statusCode === 404 || err.statusCode === 410) await store.removePushSub(userId, sub.endpoint)
+      }
+    }
+
+    // 2) SMS
+    if (smsEnabled()) {
+      const user = await store.getUserById(userId)
+      if (user?.smsEnabled && user?.phone) {
+        try {
+          await sendSms(user.phone, `Study Buddy Steve — ${title}\n${lines.join('\n')}`)
+          smsSent++
+          delivered = true
+        } catch {
+          /* SMS failed for this user; keep going */
         }
       }
     }
-    remindedIds.push(...items.map((i) => i.id))
+
+    if (delivered) remindedIds.push(...items.map((i) => i.id))
   }
   await store.markReminded(remindedIds)
-  res.json({ users: Object.keys(byUser).length, sent, events: remindedIds.length })
+  res.json({ users: Object.keys(byUser).length, pushSent, smsSent, events: remindedIds.length })
 })
 
 // One .ics for the user's ENTIRE account (all courses) — subscribe once.
@@ -349,11 +395,11 @@ app.post('/api/courses/:id/sync/:provider', requireAuth, async (req, res) => {
 //  Boot: connect DB first, then listen.
 // ------------------------------------------------------------------
 const pushOn = initPush()
-store.initStore().then((mode) => {
+Promise.all([store.initStore(), initSms()]).then(([mode, smsOn]) => {
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(
-      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}]`,
+      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}]`,
     )
   })
 })

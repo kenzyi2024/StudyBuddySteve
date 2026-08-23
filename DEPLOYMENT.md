@@ -136,9 +136,21 @@ gcloud scheduler jobs create http steve-reminders \
 ```
 (Use `--schedule "0 * * * *"` for hourly if you prefer.)
 
-**c) Students opt in** by clicking **Reminders** on their My Semester page and
-allowing notifications. That registers the service worker (`/sw.js`) and stores
-a push subscription. From then on they get an OS notification for anything due
+**c) Students opt in** from the **Reminders** panel on their My Semester page.
+It offers three channels: device notifications (Web Push), text messages, and
+calendar-app reminders (the `.ics` includes an alarm on every event).
+
+**Text messages (optional, Twilio).** Set these on `steve-gateway` to enable the
+SMS channel; leave blank and the app quietly hides it:
+```bash
+gcloud run services update steve-gateway --region us-central1 --update-env-vars \
+  TWILIO_ACCOUNT_SID=<sid>,TWILIO_AUTH_TOKEN=<token>,TWILIO_FROM=<your-twilio-number>
+```
+The same Cloud Scheduler job (below) sends the SMS digest alongside push. Note:
+on a Twilio trial account you can only text **verified** numbers, and SMS is
+usage-billed.
+
+From then on students get an OS notification and/or a text for anything due
 within 24 hours — no app needed open.
 
 Platform notes: works on desktop Chrome/Firefox/Edge and Android. On iOS the

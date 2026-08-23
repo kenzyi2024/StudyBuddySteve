@@ -23,6 +23,9 @@ const UserSchema = new Schema(
     outlook: TokenSchema,
     // Web Push subscriptions (one per browser/device the student enabled).
     pushSubs: { type: [Schema.Types.Mixed], default: [] },
+    // SMS reminder preferences.
+    phone: String,
+    smsEnabled: { type: Boolean, default: false },
   },
   { timestamps: true },
 )

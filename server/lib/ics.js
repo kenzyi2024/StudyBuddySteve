@@ -131,14 +131,14 @@ function buildVEvent(ev, { reminderMinutes, stamp }) {
   lines.push(line('STATUS', 'CONFIRMED'))
   lines.push(line('TRANSP', 'OPAQUE'))
 
-  // Reminder alarm (skip for all-day where a timed alarm is awkward).
-  if (reminderMinutes && !ev.allDay) {
-    lines.push('BEGIN:VALARM')
-    lines.push(line('ACTION', 'DISPLAY'))
-    lines.push(line('DESCRIPTION', escapeText(`Reminder: ${ev.title}`)))
-    lines.push(line('TRIGGER', `-PT${reminderMinutes}M`))
-    lines.push('END:VALARM')
-  }
+  // Reminder alarm so the connected calendar (Apple/Google/Outlook) notifies
+  // natively. Timed events: N minutes before. All-day events: 6pm the evening
+  // before (a sensible "due tomorrow" nudge).
+  lines.push('BEGIN:VALARM')
+  lines.push(line('ACTION', 'DISPLAY'))
+  lines.push(line('DESCRIPTION', escapeText(`Reminder: ${ev.title}`)))
+  lines.push(line('TRIGGER', ev.allDay ? '-PT6H' : `-PT${reminderMinutes}M`))
+  lines.push('END:VALARM')
 
   lines.push('END:VEVENT')
   return lines

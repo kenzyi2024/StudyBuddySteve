@@ -26,6 +26,8 @@ const UserSchema = new Schema(
     // SMS reminder preferences.
     phone: String,
     smsEnabled: { type: Boolean, default: false },
+    // Saved Canvas calendar-feed URL (for re-sync).
+    canvasFeedUrl: String,
   },
   { timestamps: true },
 )
@@ -59,6 +61,7 @@ const EventSchema = new Schema(
       default: 'other',
     },
     label: String, // custom label for the 'other' type
+    externalUid: { type: String, index: true }, // UID from an imported .ics (dedupe)
     due: { type: Date, required: true },
     allDay: { type: Boolean, default: false },
     approved: { type: Boolean, default: false },

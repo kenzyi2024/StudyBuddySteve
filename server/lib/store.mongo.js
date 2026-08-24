@@ -99,6 +99,45 @@ export async function addEvents(userId, courseId, list = []) {
   return created.map(eventOut)
 }
 
+// Import events from an .ics (committed immediately; dedupe by externalUid).
+export async function importEvents(userId, courseId, list = []) {
+  const course = await Course.findOne({ _id: courseId, user: userId })
+  if (!course) return { imported: 0, skipped: 0 }
+  const uids = list.map((e) => e.externalUid).filter(Boolean)
+  const existing = new Set(
+    uids.length ? await Event.find({ user: userId, externalUid: { $in: uids } }).distinct('externalUid') : [],
+  )
+  const docs = []
+  let skipped = 0
+  for (const e of list) {
+    if (e.externalUid && existing.has(e.externalUid)) {
+      skipped++
+      continue
+    }
+    docs.push({
+      course: course._id,
+      user: userId,
+      title: e.title || 'Untitled',
+      courseName: e.course || course.name || '',
+      type: KNOWN_TYPES.has(e.type) ? e.type : 'other',
+      externalUid: e.externalUid || undefined,
+      due: e.due ? new Date(e.due) : new Date(),
+      allDay: !!e.allDay,
+      approved: false,
+      committed: true, // imports come from the student's real calendar
+      done: false,
+      confidence: 1,
+      source: { method: 'import' },
+    })
+  }
+  if (docs.length) await Event.insertMany(docs, { ordered: false })
+  return { imported: docs.length, skipped }
+}
+
+export async function setCanvasFeed(userId, url) {
+  await User.updateOne({ _id: userId }, { canvasFeedUrl: url })
+}
+
 export async function eventsForCourse(userId, courseId) {
   const list = await Event.find({ course: courseId, user: userId }).sort({ due: 1 })
   return list.map(eventOut)

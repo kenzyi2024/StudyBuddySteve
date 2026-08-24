@@ -114,6 +114,48 @@ export async function addEvents(userId, courseId, list = []) {
   }
   return created
 }
+export async function importEvents(userId, courseId, list = []) {
+  const course = courses.get(courseId)
+  if (!course || course.user !== userId) return { imported: 0, skipped: 0 }
+  const existing = new Set(
+    [...events.values()].filter((e) => e.user === userId && e.externalUid).map((e) => e.externalUid),
+  )
+  let imported = 0
+  let skipped = 0
+  for (const e of list) {
+    if (e.externalUid && existing.has(e.externalUid)) {
+      skipped++
+      continue
+    }
+    const _id = uid('evt')
+    events.set(_id, {
+      _id,
+      course: courseId,
+      user: userId,
+      title: e.title || 'Untitled',
+      courseName: e.course || course.name || '',
+      type: e.type || 'other',
+      externalUid: e.externalUid || null,
+      due: e.due ? new Date(e.due) : new Date(),
+      allDay: !!e.allDay,
+      approved: false,
+      committed: true,
+      done: false,
+      reminded: false,
+      confidence: 1,
+      source: { method: 'import' },
+    })
+    if (e.externalUid) existing.add(e.externalUid)
+    imported++
+  }
+  return { imported, skipped }
+}
+
+export async function setCanvasFeed(userId, url) {
+  const u = users.get(userId)
+  if (u) u.canvasFeedUrl = url
+}
+
 function scoped(userId, courseId) {
   return [...events.values()]
     .filter((e) => e.user === userId && e.course === courseId)

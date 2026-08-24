@@ -5,6 +5,7 @@ import multer from 'multer'
 import cookieParser from 'cookie-parser'
 
 import { buildICS } from './lib/ics.js'
+import { parseIcs } from './lib/icsImport.js'
 import * as store from './lib/store.js'
 import { parseSyllabus } from './lib/parserClient.js'
 import {
@@ -172,6 +173,53 @@ app.patch('/api/events/:id', requireAuth, async (req, res) => {
 // account calendar / task list / reminders.
 app.get('/api/me/events', requireAuth, async (req, res) => {
   res.json({ events: await store.allEventsForUser(req.userId) })
+})
+
+// ------------------------------------------------------------------
+//  Import from another calendar (.ics file / URL) + Canvas
+// ------------------------------------------------------------------
+
+async function fetchIcs(url) {
+  const https = url.replace(/^webcal:/i, 'https:')
+  const resp = await fetch(https, { redirect: 'follow' })
+  if (!resp.ok) throw new Error(`Could not fetch calendar (${resp.status})`)
+  return resp.text()
+}
+
+async function doImport(userId, icsText, { tz, defaultType, courseName }) {
+  const { calendarName, events } = parseIcs(icsText, { tz, defaultType, courseName })
+  const name = courseName || calendarName || 'Imported Calendar'
+  const course = await store.createCourse(userId, { name })
+  const result = await store.importEvents(userId, course.id, events)
+  return { course: name, found: events.length, ...result }
+}
+
+// Generic import: multipart .ics file OR JSON { url }.
+app.post('/api/import/ics', requireAuth, upload.single('file'), async (req, res) => {
+  const tz = req.body.tz || 'UTC'
+  try {
+    let text
+    if (req.file) text = req.file.buffer.toString('utf8')
+    else if (req.body.url) text = await fetchIcs(req.body.url)
+    else return res.status(400).json({ error: 'Provide an .ics file or a url' })
+    res.json(await doImport(req.userId, text, { tz }))
+  } catch (e) {
+    res.status(422).json({ error: e.message || 'Import failed' })
+  }
+})
+
+// Canvas: import from the student's Canvas calendar-feed URL + save it for re-sync.
+app.post('/api/import/canvas', requireAuth, async (req, res) => {
+  const { url, tz } = req.body || {}
+  if (!url) return res.status(400).json({ error: 'Paste your Canvas calendar-feed URL' })
+  try {
+    const text = await fetchIcs(url)
+    const out = await doImport(req.userId, text, { tz: tz || 'UTC', defaultType: 'homework', courseName: null })
+    await store.setCanvasFeed(req.userId, url.replace(/^webcal:/i, 'https:'))
+    res.json({ ...out, source: 'canvas' })
+  } catch (e) {
+    res.status(422).json({ error: e.message || 'Canvas import failed' })
+  }
 })
 
 app.delete('/api/events/:id', requireAuth, async (req, res) => {

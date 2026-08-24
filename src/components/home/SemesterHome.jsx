@@ -5,6 +5,7 @@ import {
   ListChecks,
   LayoutDashboard,
   UploadCloud,
+  Upload,
   Download,
   Bell,
   BellRing,
@@ -21,8 +22,9 @@ import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
 import RemindersModal from './RemindersModal.jsx'
+import ImportModal from './ImportModal.jsx'
 import { fmtTime, fmtDateLong, typeMeta, courseColors } from '../../data/events.js'
-import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl } from '../../lib/api.js'
+import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl, getMyEvents } from '../../lib/api.js'
 
 // Whole-day difference between an event's wall-clock date and today.
 function daysUntil(iso) {
@@ -59,6 +61,9 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     typeof Notification !== 'undefined' && Notification.permission === 'granted',
   )
   const [remindersOpen, setRemindersOpen] = useState(false)
+  const [importOpen, setImportOpen] = useState(false)
+
+  const refreshEvents = () => getMyEvents().then((r) => setEvents(r.events || [])).catch(() => {})
   const notifiedRef = useRef(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
 
   useEffect(() => setEvents(initialEvents), [initialEvents])
@@ -256,6 +261,9 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <RetroButton color="cyan" size="sm" onClick={() => setImportOpen(true)}>
+              <Upload size={15} /> Import
+            </RetroButton>
             <RetroButton color="lime" size="sm" onClick={onUploadMore}>
               <UploadCloud size={15} /> Add Syllabus
             </RetroButton>
@@ -448,6 +456,8 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
           if (typeof Notification !== 'undefined') setNotify(Notification.permission === 'granted')
         }}
       />
+
+      <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={refreshEvents} />
     </div>
   )
 }

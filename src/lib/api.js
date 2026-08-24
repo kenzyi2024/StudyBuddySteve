@@ -144,6 +144,33 @@ export async function getMyEvents() {
   return json(await req('/me/events'))
 }
 
+// --- import from another calendar ---
+const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+export async function importIcsFile(file) {
+  const form = new FormData()
+  form.append('file', file)
+  form.append('tz', TZ)
+  return json(await req('/import/ics', { method: 'POST', body: form }))
+}
+export async function importIcsUrl(url) {
+  return json(
+    await req('/import/ics', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, tz: TZ }),
+    }),
+  )
+}
+export async function importCanvas(url) {
+  return json(
+    await req('/import/canvas', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ url, tz: TZ }),
+    }),
+  )
+}
+
 // --- reminders / web push ---
 export async function reminderStatus() {
   try {

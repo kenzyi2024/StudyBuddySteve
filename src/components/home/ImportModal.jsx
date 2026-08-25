@@ -89,6 +89,9 @@ function Inner({ onClose, onImported }) {
             placeholder="https://canvas.…/feeds/calendars/user_….ics"
             onChange={(e) => setCanvas(e.target.value)}
           />
+          <p className="font-mono text-base text-lime/80 mt-2">
+            ▸ Once connected, new assignments sync in automatically every day.
+          </p>
           <div className="mt-2 flex justify-end">
             <RetroButton color="magenta" size="sm" disabled={busy || !canvas} onClick={() => run(() => importCanvas(canvas))}>
               Connect Canvas

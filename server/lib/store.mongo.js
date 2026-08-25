@@ -134,8 +134,24 @@ export async function importEvents(userId, courseId, list = []) {
   return { imported: docs.length, skipped }
 }
 
-export async function setCanvasFeed(userId, url) {
-  await User.updateOne({ _id: userId }, { canvasFeedUrl: url })
+export async function setCanvasFeed(userId, url, tz) {
+  const patch = { canvasFeedUrl: url }
+  if (tz) patch.tz = tz
+  await User.updateOne({ _id: userId }, patch)
+}
+
+// Find an existing course by name for this user, else create it (keeps
+// re-imports/re-syncs from spawning duplicate course containers).
+export async function getOrCreateCourse(userId, name) {
+  const existing = await Course.findOne({ user: userId, name })
+  if (existing) return courseOut(existing)
+  return createCourse(userId, { name })
+}
+
+// Everyone who connected a Canvas feed (for the scheduled re-sync).
+export async function usersWithCanvas() {
+  const list = await User.find({ canvasFeedUrl: { $exists: true, $ne: null } }).select('canvasFeedUrl tz')
+  return list.map((u) => ({ userId: String(u._id), url: u.canvasFeedUrl, tz: u.tz || 'UTC' }))
 }
 
 export async function eventsForCourse(userId, courseId) {

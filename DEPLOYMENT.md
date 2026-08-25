@@ -136,6 +136,19 @@ gcloud scheduler jobs create http steve-reminders \
 ```
 (Use `--schedule "0 * * * *"` for hourly if you prefer.)
 
+**Canvas auto-sync (optional).** If students connect a Canvas feed, add a second
+scheduler job so new assignments flow in daily on their own:
+```bash
+gcloud scheduler jobs create http steve-canvas-sync \
+  --location us-central1 \
+  --schedule "0 6 * * *" \
+  --uri "https://<your-gateway>.run.app/api/cron/canvas-sync" \
+  --http-method POST \
+  --headers "x-cron-key=<the same CRON_SECRET>"
+```
+Re-imports dedupe by assignment UID, so nothing is duplicated — only new or
+changed items are added.
+
 **c) Students opt in** from the **Reminders** panel on their My Semester page.
 It offers three channels: device notifications (Web Push), text messages, and
 calendar-app reminders (the `.ics` includes an alarm on every event).

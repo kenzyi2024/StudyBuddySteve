@@ -151,9 +151,25 @@ export async function importEvents(userId, courseId, list = []) {
   return { imported, skipped }
 }
 
-export async function setCanvasFeed(userId, url) {
+export async function setCanvasFeed(userId, url, tz) {
   const u = users.get(userId)
-  if (u) u.canvasFeedUrl = url
+  if (u) {
+    u.canvasFeedUrl = url
+    if (tz) u.tz = tz
+  }
+}
+
+export async function getOrCreateCourse(userId, name) {
+  for (const c of courses.values()) {
+    if (c.user === userId && c.name === name) return courseOut(c)
+  }
+  return createCourse(userId, { name })
+}
+
+export async function usersWithCanvas() {
+  return [...users.values()]
+    .filter((u) => u.canvasFeedUrl)
+    .map((u) => ({ userId: u._id, url: u.canvasFeedUrl, tz: u.tz || 'UTC' }))
 }
 
 function scoped(userId, courseId) {

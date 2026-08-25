@@ -26,8 +26,10 @@ const UserSchema = new Schema(
     // SMS reminder preferences.
     phone: String,
     smsEnabled: { type: Boolean, default: false },
-    // Saved Canvas calendar-feed URL (for re-sync).
+    // Saved Canvas calendar-feed URL + the student's timezone (for scheduled
+    // re-sync, which has no browser to read the timezone from).
     canvasFeedUrl: String,
+    tz: String,
   },
   { timestamps: true },
 )

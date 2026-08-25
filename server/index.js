@@ -189,7 +189,8 @@ async function fetchIcs(url) {
 async function doImport(userId, icsText, { tz, defaultType, courseName }) {
   const { calendarName, events } = parseIcs(icsText, { tz, defaultType, courseName })
   const name = courseName || calendarName || 'Imported Calendar'
-  const course = await store.createCourse(userId, { name })
+  // get-or-create so re-imports/re-syncs reuse the same course container
+  const course = await store.getOrCreateCourse(userId, name)
   const result = await store.importEvents(userId, course.id, events)
   return { course: name, found: events.length, ...result }
 }
@@ -214,12 +215,38 @@ app.post('/api/import/canvas', requireAuth, async (req, res) => {
   if (!url) return res.status(400).json({ error: 'Paste your Canvas calendar-feed URL' })
   try {
     const text = await fetchIcs(url)
-    const out = await doImport(req.userId, text, { tz: tz || 'UTC', defaultType: 'homework', courseName: null })
-    await store.setCanvasFeed(req.userId, url.replace(/^webcal:/i, 'https:'))
+    const out = await doImport(req.userId, text, { tz: tz || 'UTC', defaultType: 'homework', courseName: 'Canvas' })
+    // save the feed + timezone so the daily cron can re-sync without a browser
+    await store.setCanvasFeed(req.userId, url.replace(/^webcal:/i, 'https:'), tz || 'UTC')
     res.json({ ...out, source: 'canvas' })
   } catch (e) {
     res.status(422).json({ error: e.message || 'Canvas import failed' })
   }
+})
+
+// Scheduled Canvas re-sync — Cloud Scheduler hits this (secret-protected). For
+// every student who connected a feed, re-fetch and import new assignments
+// (dedup by UID means nothing is duplicated).
+app.post('/api/cron/canvas-sync', async (req, res) => {
+  const secret = process.env.CRON_SECRET
+  if (!secret || req.headers['x-cron-key'] !== secret) {
+    return res.status(403).json({ error: 'Forbidden' })
+  }
+  const users = await store.usersWithCanvas()
+  let imported = 0
+  let skipped = 0
+  let failed = 0
+  for (const u of users) {
+    try {
+      const text = await fetchIcs(u.url)
+      const out = await doImport(u.userId, text, { tz: u.tz, defaultType: 'homework', courseName: 'Canvas' })
+      imported += out.imported
+      skipped += out.skipped
+    } catch {
+      failed++
+    }
+  }
+  res.json({ users: users.length, imported, skipped, failed })
 })
 
 app.delete('/api/events/:id', requireAuth, async (req, res) => {

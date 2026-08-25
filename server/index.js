@@ -52,6 +52,18 @@ app.use(
 )
 app.use(express.json())
 app.use(cookieParser())
+
+// Baseline security headers on every API response.
+app.use((_req, res, next) => {
+  res.setHeader('X-Content-Type-Options', 'nosniff')
+  res.setHeader('X-Frame-Options', 'DENY')
+  res.setHeader('Referrer-Policy', 'no-referrer')
+  if (process.env.NODE_ENV === 'production') {
+    res.setHeader('Strict-Transport-Security', 'max-age=63072000; includeSubDomains')
+  }
+  next()
+})
+
 app.use(attachUser) // reads Bearer header / cookie / ?token
 
 const upload = multer({

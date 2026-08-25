@@ -1,9 +1,30 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, Upload, Link2, GraduationCap } from 'lucide-react'
+import { X, Upload, Link2, GraduationCap, RefreshCw, Check } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import Steve from '../Steve.jsx'
-import { importIcsFile, importIcsUrl, importCanvas } from '../../lib/api.js'
+import {
+  importIcsFile,
+  importIcsUrl,
+  importCanvas,
+  canvasStatus,
+  syncCanvas,
+} from '../../lib/api.js'
+
+// "2 minutes ago" style relative time.
+function ago(iso) {
+  if (!iso) return 'never'
+  const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
+  if (s < 60) return 'just now'
+  const m = Math.floor(s / 60)
+  if (m < 60) return `${m} min ago`
+  const h = Math.floor(m / 60)
+  if (h < 24) return `${h} hour${h > 1 ? 's' : ''} ago`
+  const d = Math.floor(h / 24)
+  if (d === 1) return 'yesterday'
+  if (d < 7) return `${d} days ago`
+  return new Date(iso).toLocaleDateString()
+}
 
 /**
  * ImportModal — bring events in from another calendar.
@@ -22,6 +43,11 @@ function Inner({ onClose, onImported }) {
   const [canvas, setCanvas] = useState('')
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
+  const [status, setStatus] = useState({ connected: false, lastSync: null })
+
+  useEffect(() => {
+    canvasStatus().then(setStatus)
+  }, [])
 
   const run = async (fn) => {
     setBusy(true)
@@ -34,6 +60,9 @@ function Inner({ onClose, onImported }) {
           r.skipped ? ` (${r.skipped} already there)` : ''
         } from ${r.course}.`,
       })
+      if (r.source === 'canvas' || r.lastSync) {
+        setStatus({ connected: true, lastSync: r.lastSync || new Date().toISOString() })
+      }
       onImported?.()
     } catch (e) {
       setMsg({ ok: false, text: e.message || 'Import failed. Check the file or URL.' })
@@ -79,6 +108,23 @@ function Inner({ onClose, onImported }) {
             <GraduationCap size={18} className="text-magenta" />
             <span className="font-pixel text-[11px] text-beige">CANVAS</span>
           </div>
+
+          {status.connected && (
+            <div className="flex items-center justify-between gap-2 bg-void border-3 border-ink p-2 mb-3">
+              <span className="font-mono text-base text-lime flex items-center gap-1.5">
+                <Check size={15} /> Connected · synced {ago(status.lastSync)}
+              </span>
+              <RetroButton
+                color="cyan"
+                size="sm"
+                disabled={busy}
+                onClick={() => run(() => syncCanvas())}
+              >
+                <RefreshCw size={13} /> Sync now
+              </RetroButton>
+            </div>
+          )}
+
           <p className="font-mono text-base text-beige/60 mb-2">
             In Canvas: <span className="text-cyan">Calendar → Calendar Feed</span> (bottom-right),
             copy the URL, and paste it here. Brings in your assignments &amp; due dates.

@@ -29,6 +29,7 @@ const UserSchema = new Schema(
     // Saved Canvas calendar-feed URL + the student's timezone (for scheduled
     // re-sync, which has no browser to read the timezone from).
     canvasFeedUrl: String,
+    canvasLastSync: Date,
     tz: String,
   },
   { timestamps: true },

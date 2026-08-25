@@ -170,6 +170,16 @@ export async function importCanvas(url) {
     }),
   )
 }
+export async function canvasStatus() {
+  try {
+    return await json(await req('/me/canvas'))
+  } catch {
+    return { connected: false, lastSync: null }
+  }
+}
+export async function syncCanvas() {
+  return json(await req('/import/canvas/sync', { method: 'POST' }))
+}
 
 // --- reminders / web push ---
 export async function reminderStatus() {

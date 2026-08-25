@@ -159,6 +159,13 @@ export async function setCanvasFeed(userId, url, tz) {
   }
 }
 
+export async function setCanvasSynced(userId) {
+  const now = new Date()
+  const u = users.get(userId)
+  if (u) u.canvasLastSync = now
+  return now
+}
+
 export async function getOrCreateCourse(userId, name) {
   for (const c of courses.values()) {
     if (c.user === userId && c.name === name) return courseOut(c)

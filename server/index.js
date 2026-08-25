@@ -230,9 +230,30 @@ app.post('/api/import/canvas', requireAuth, async (req, res) => {
     const out = await doImport(req.userId, text, { tz: tz || 'UTC', defaultType: 'homework', courseName: 'Canvas' })
     // save the feed + timezone so the daily cron can re-sync without a browser
     await store.setCanvasFeed(req.userId, url.replace(/^webcal:/i, 'https:'), tz || 'UTC')
-    res.json({ ...out, source: 'canvas' })
+    const lastSync = await store.setCanvasSynced(req.userId)
+    res.json({ ...out, source: 'canvas', lastSync })
   } catch (e) {
     res.status(422).json({ error: e.message || 'Canvas import failed' })
+  }
+})
+
+// Canvas connection status for the current user.
+app.get('/api/me/canvas', requireAuth, async (req, res) => {
+  const u = await store.getUserById(req.userId)
+  res.json({ connected: !!u?.canvasFeedUrl, lastSync: u?.canvasLastSync || null })
+})
+
+// Manual re-sync for the signed-in user (the "Sync now" button).
+app.post('/api/import/canvas/sync', requireAuth, async (req, res) => {
+  const u = await store.getUserById(req.userId)
+  if (!u?.canvasFeedUrl) return res.status(400).json({ error: 'Canvas isn’t connected yet.' })
+  try {
+    const text = await fetchIcs(u.canvasFeedUrl)
+    const out = await doImport(req.userId, text, { tz: u.tz || 'UTC', defaultType: 'homework', courseName: 'Canvas' })
+    const lastSync = await store.setCanvasSynced(req.userId)
+    res.json({ ...out, source: 'canvas', lastSync })
+  } catch (e) {
+    res.status(422).json({ error: e.message || 'Canvas sync failed' })
   }
 })
 
@@ -254,6 +275,7 @@ app.post('/api/cron/canvas-sync', async (req, res) => {
       const out = await doImport(u.userId, text, { tz: u.tz, defaultType: 'homework', courseName: 'Canvas' })
       imported += out.imported
       skipped += out.skipped
+      await store.setCanvasSynced(u.userId)
     } catch {
       failed++
     }

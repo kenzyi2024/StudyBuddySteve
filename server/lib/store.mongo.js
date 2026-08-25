@@ -148,6 +148,12 @@ export async function getOrCreateCourse(userId, name) {
   return createCourse(userId, { name })
 }
 
+export async function setCanvasSynced(userId) {
+  const now = new Date()
+  await User.updateOne({ _id: userId }, { canvasLastSync: now })
+  return now
+}
+
 // Everyone who connected a Canvas feed (for the scheduled re-sync).
 export async function usersWithCanvas() {
   const list = await User.find({ canvasFeedUrl: { $exists: true, $ne: null } }).select('canvasFeedUrl tz')

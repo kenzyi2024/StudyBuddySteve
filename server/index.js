@@ -243,6 +243,12 @@ app.get('/api/me/canvas', requireAuth, async (req, res) => {
   res.json({ connected: !!u?.canvasFeedUrl, lastSync: u?.canvasLastSync || null })
 })
 
+// Disconnect Canvas — stops the daily auto-sync (keeps imported events).
+app.delete('/api/me/canvas', requireAuth, async (req, res) => {
+  await store.clearCanvasFeed(req.userId)
+  res.json({ ok: true })
+})
+
 // Manual re-sync for the signed-in user (the "Sync now" button).
 app.post('/api/import/canvas/sync', requireAuth, async (req, res) => {
   const u = await store.getUserById(req.userId)

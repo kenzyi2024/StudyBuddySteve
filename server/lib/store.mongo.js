@@ -154,6 +154,11 @@ export async function setCanvasSynced(userId) {
   return now
 }
 
+// Stop auto-sync: forget the feed (keeps already-imported events).
+export async function clearCanvasFeed(userId) {
+  await User.updateOne({ _id: userId }, { $unset: { canvasFeedUrl: '', canvasLastSync: '' } })
+}
+
 // Everyone who connected a Canvas feed (for the scheduled re-sync).
 export async function usersWithCanvas() {
   const list = await User.find({ canvasFeedUrl: { $exists: true, $ne: null } }).select('canvasFeedUrl tz')

@@ -166,6 +166,14 @@ export async function setCanvasSynced(userId) {
   return now
 }
 
+export async function clearCanvasFeed(userId) {
+  const u = users.get(userId)
+  if (u) {
+    u.canvasFeedUrl = ''
+    u.canvasLastSync = null
+  }
+}
+
 export async function getOrCreateCourse(userId, name) {
   for (const c of courses.values()) {
     if (c.user === userId && c.name === name) return courseOut(c)

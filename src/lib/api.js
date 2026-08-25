@@ -180,6 +180,9 @@ export async function canvasStatus() {
 export async function syncCanvas() {
   return json(await req('/import/canvas/sync', { method: 'POST' }))
 }
+export async function disconnectCanvas() {
+  return json(await req('/me/canvas', { method: 'DELETE' }))
+}
 
 // --- reminders / web push ---
 export async function reminderStatus() {

@@ -9,6 +9,7 @@ import {
   importCanvas,
   canvasStatus,
   syncCanvas,
+  disconnectCanvas,
 } from '../../lib/api.js'
 
 // "2 minutes ago" style relative time.
@@ -110,18 +111,34 @@ function Inner({ onClose, onImported }) {
           </div>
 
           {status.connected && (
-            <div className="flex items-center justify-between gap-2 bg-void border-3 border-ink p-2 mb-3">
-              <span className="font-mono text-base text-lime flex items-center gap-1.5">
-                <Check size={15} /> Connected · synced {ago(status.lastSync)}
-              </span>
-              <RetroButton
-                color="cyan"
-                size="sm"
+            <div className="bg-void border-3 border-ink p-2 mb-3">
+              <div className="flex items-center justify-between gap-2">
+                <span className="font-mono text-base text-lime flex items-center gap-1.5">
+                  <Check size={15} /> Connected · synced {ago(status.lastSync)}
+                </span>
+                <RetroButton color="cyan" size="sm" disabled={busy} onClick={() => run(() => syncCanvas())}>
+                  <RefreshCw size={13} /> Sync now
+                </RetroButton>
+              </div>
+              <button
+                onClick={async () => {
+                  if (!window.confirm('Disconnect Canvas? Auto-sync stops; your imported events stay.')) return
+                  setBusy(true)
+                  try {
+                    await disconnectCanvas()
+                    setStatus({ connected: false, lastSync: null })
+                    setMsg({ ok: true, text: 'Canvas disconnected. Auto-sync is off.' })
+                  } catch (e) {
+                    setMsg({ ok: false, text: e.message || 'Could not disconnect.' })
+                  } finally {
+                    setBusy(false)
+                  }
+                }}
                 disabled={busy}
-                onClick={() => run(() => syncCanvas())}
+                className="font-mono text-base text-magenta hover:text-lime underline decoration-dashed underline-offset-4 mt-2"
               >
-                <RefreshCw size={13} /> Sync now
-              </RetroButton>
+                Disconnect Canvas
+              </button>
             </div>
           )}
 

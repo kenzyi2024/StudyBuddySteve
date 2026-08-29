@@ -159,6 +159,39 @@ export async function setCanvasFeed(userId, url, tz) {
   }
 }
 
+// --- study plan ---
+export async function setStudyPrefs(userId, prefs) {
+  const u = users.get(userId)
+  if (u) u.studyPrefs = prefs
+}
+export async function clearPlanEvents(userId) {
+  for (const [id, e] of events) {
+    if (e.user === userId && e.source && e.source.method === 'plan') events.delete(id)
+  }
+}
+export async function addPlanEvents(userId, list = []) {
+  for (const e of list) {
+    const _id = uid('evt')
+    events.set(_id, {
+      _id,
+      course: e.courseId,
+      user: userId,
+      title: e.title,
+      courseName: e.course || '',
+      type: 'study',
+      due: new Date(e.due),
+      allDay: !!e.allDay,
+      approved: false,
+      committed: true,
+      done: false,
+      reminded: false,
+      confidence: 1,
+      source: { method: 'plan' },
+    })
+  }
+  return list.length
+}
+
 export async function setCanvasSynced(userId) {
   const now = new Date()
   const u = users.get(userId)

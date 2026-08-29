@@ -31,6 +31,7 @@ import {
 import { pushEvents } from './lib/calendarSync.js'
 import { initPush, pushEnabled, publicKey, sendPush } from './lib/push.js'
 import { initSms, smsEnabled, sendSms } from './lib/sms.js'
+import { generatePlan, DEFAULT_PREFS } from './lib/studyPlanner.js'
 
 dotenv.config()
 
@@ -117,7 +118,18 @@ const publicUser = (u) => ({
   name: u.name || '',
   phone: u.phone || '',
   smsEnabled: !!u.smsEnabled,
+  studyPrefs: u.studyPrefs || null,
 })
+
+// Regenerate the study plan from the user's committed events + saved prefs.
+// Clears the previous plan first so it's always idempotent.
+async function rebuildStudyPlan(userId) {
+  const user = await store.getUserById(userId)
+  const events = await store.allEventsForUser(userId)
+  const plan = generatePlan(events, user?.studyPrefs || DEFAULT_PREFS)
+  await store.clearPlanEvents(userId)
+  return store.addPlanEvents(userId, plan)
+}
 
 app.post('/api/auth/register', async (req, res) => {
   const { email, password, name } = req.body || {}
@@ -210,6 +222,24 @@ app.patch('/api/events/:id', requireAuth, async (req, res) => {
 // account calendar / task list / reminders.
 app.get('/api/me/events', requireAuth, async (req, res) => {
   res.json({ events: await store.allEventsForUser(req.userId) })
+})
+
+// ------------------------------------------------------------------
+//  Study plan (personalized study sessions)
+// ------------------------------------------------------------------
+
+// Save quiz answers (or the default) and (re)build the plan.
+app.post('/api/me/study-prefs', requireAuth, async (req, res) => {
+  const prefs = { ...DEFAULT_PREFS, ...(req.body?.prefs || {}) }
+  await store.setStudyPrefs(req.userId, prefs)
+  const sessions = await rebuildStudyPlan(req.userId)
+  res.json({ prefs, sessions })
+})
+
+// Rebuild the plan on demand (e.g., after adding a syllabus).
+app.post('/api/me/study-plan', requireAuth, async (req, res) => {
+  const sessions = await rebuildStudyPlan(req.userId)
+  res.json({ sessions })
 })
 
 // ------------------------------------------------------------------
@@ -327,6 +357,8 @@ app.post('/api/courses/:id/commit', requireAuth, async (req, res) => {
   if (!(await store.getCourse(req.userId, req.params.id)))
     return res.status(404).json({ error: 'Unknown course' })
   const events = await store.commitCourse(req.userId, req.params.id)
+  // Now that these exams/readings are in the calendar, refresh the study plan.
+  await rebuildStudyPlan(req.userId).catch(() => {})
   res.json({ committed: events.length, events })
 })
 

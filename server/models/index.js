@@ -31,6 +31,8 @@ const UserSchema = new Schema(
     canvasFeedUrl: String,
     canvasLastSync: Date,
     tz: String,
+    // Study-style preferences from the onboarding quiz (drives the planner).
+    studyPrefs: { type: Schema.Types.Mixed, default: null },
   },
   { timestamps: true },
 )

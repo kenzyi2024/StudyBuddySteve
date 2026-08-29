@@ -8,6 +8,7 @@ import PixelWipe from './components/PixelWipe.jsx'
 import Dashboard from './components/dashboard/Dashboard.jsx'
 import SemesterHome from './components/home/SemesterHome.jsx'
 import AuthModal from './components/AuthModal.jsx'
+import StudyQuiz from './components/home/StudyQuiz.jsx'
 import { me, logout, getMyEvents } from './lib/api.js'
 
 const FEATURES = [
@@ -38,6 +39,7 @@ export default function App() {
   const [user, setUser] = useState(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [homeEvents, setHomeEvents] = useState([])
+  const [quizOpen, setQuizOpen] = useState(false)
 
   // Restore session on load; if the user has saved events, land on their home.
   useEffect(() => {
@@ -85,6 +87,8 @@ export default function App() {
     setAuthOpen(false)
     const ev = await loadHomeEvents()
     if (ev.length) transitionTo('home')
+    // First-timers (no saved study prefs) get the onboarding study quiz.
+    if (!u.studyPrefs) setQuizOpen(true)
   }
 
   const doLogout = async () => {
@@ -107,11 +111,25 @@ export default function App() {
 
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuthed={onAuthed} />
 
+      <StudyQuiz
+        open={quizOpen}
+        onClose={() => setQuizOpen(false)}
+        onDone={async () => {
+          setQuizOpen(false)
+          await loadHomeEvents()
+          me()
+            .then((r) => setUser(r.user))
+            .catch(() => {})
+          if (screen !== 'home') transitionTo('home')
+        }}
+      />
+
       {screen === 'home' && (
         <SemesterHome
           user={user}
           initialEvents={homeEvents}
           onUploadMore={() => transitionTo('upload')}
+          onOpenQuiz={() => setQuizOpen(true)}
           onLogout={doLogout}
         />
       )}

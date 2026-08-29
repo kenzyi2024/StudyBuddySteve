@@ -134,6 +134,33 @@ export async function importEvents(userId, courseId, list = []) {
   return { imported: docs.length, skipped }
 }
 
+// --- study plan ---
+export async function setStudyPrefs(userId, prefs) {
+  await User.updateOne({ _id: userId }, { studyPrefs: prefs })
+}
+export async function clearPlanEvents(userId) {
+  await Event.deleteMany({ user: userId, 'source.method': 'plan' })
+}
+export async function addPlanEvents(userId, list = []) {
+  if (!list.length) return 0
+  const docs = list.map((e) => ({
+    course: e.courseId,
+    user: userId,
+    title: e.title,
+    courseName: e.course || '',
+    type: 'study',
+    due: new Date(e.due),
+    allDay: !!e.allDay,
+    approved: false,
+    committed: true,
+    done: false,
+    confidence: 1,
+    source: { method: 'plan' },
+  }))
+  await Event.insertMany(docs, { ordered: false })
+  return docs.length
+}
+
 export async function setCanvasFeed(userId, url, tz) {
   const patch = { canvasFeedUrl: url }
   if (tz) patch.tz = tz

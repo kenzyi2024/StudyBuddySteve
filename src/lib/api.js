@@ -184,6 +184,20 @@ export async function disconnectCanvas() {
   return json(await req('/me/canvas', { method: 'DELETE' }))
 }
 
+// --- study plan ---
+export async function saveStudyPrefs(prefs) {
+  return json(
+    await req('/me/study-prefs', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ prefs }),
+    }),
+  )
+}
+export async function buildStudyPlan() {
+  return json(await req('/me/study-plan', { method: 'POST' }))
+}
+
 // --- reminders / web push ---
 export async function reminderStatus() {
   try {

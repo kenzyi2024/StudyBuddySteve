@@ -15,6 +15,7 @@ import {
   LogOut,
   Trash2,
   Eraser,
+  Coffee,
 } from 'lucide-react'
 import Steve from '../Steve.jsx'
 import RetroButton from '../RetroButton.jsx'
@@ -52,7 +53,7 @@ function urgencyColor(days, done) {
 
 const NOTIFIED_KEY = 'steve_notified'
 
-export default function SemesterHome({ user, initialEvents = [], onUploadMore, onLogout }) {
+export default function SemesterHome({ user, initialEvents = [], onUploadMore, onOpenQuiz, onLogout }) {
   const [events, setEvents] = useState(initialEvents)
   const [view, setView] = useState('overview') // overview | calendar | tasks
   const [editing, setEditing] = useState(null)
@@ -261,6 +262,9 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <RetroButton color="grape" size="sm" onClick={onOpenQuiz}>
+              <Coffee size={15} /> Study Plan
+            </RetroButton>
             <RetroButton color="cyan" size="sm" onClick={() => setImportOpen(true)}>
               <Upload size={15} /> Import
             </RetroButton>

@@ -1,11 +1,14 @@
 import express from 'express'
+import 'express-async-errors' // forwards async route errors to the error handler
 import cors from 'cors'
 import dotenv from 'dotenv'
 import multer from 'multer'
 import cookieParser from 'cookie-parser'
+import rateLimit from 'express-rate-limit'
 
 import { buildICS } from './lib/ics.js'
 import { parseIcs } from './lib/icsImport.js'
+import { safeFetchText } from './lib/safeFetch.js'
 import * as store from './lib/store.js'
 import { parseSyllabus } from './lib/parserClient.js'
 import {
@@ -32,6 +35,9 @@ import { initSms, smsEnabled, sendSms } from './lib/sms.js'
 dotenv.config()
 
 const app = express()
+// Cloud Run terminates TLS at a proxy; trust it so rate-limit + secure cookies
+// see the real client IP / protocol.
+app.set('trust proxy', 1)
 const PORT = process.env.PORT || 4000
 // FRONTEND_URL may be a comma-separated allowlist (e.g. prod + preview URLs).
 const FRONTEND_URLS = (process.env.FRONTEND_URL || 'http://localhost:5173')
@@ -65,6 +71,25 @@ app.use((_req, res, next) => {
 })
 
 app.use(attachUser) // reads Bearer header / cookie / ?token
+
+// --- rate limiting ---
+const limiterOpts = { standardHeaders: true, legacyHeaders: false }
+// Tight on auth (brute-force / credential stuffing).
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 20,
+  message: { error: 'Too many attempts. Please wait a few minutes and try again.' },
+  ...limiterOpts,
+})
+// Moderate on the expensive endpoints (fetch/parse/import).
+const heavyLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 60,
+  message: { error: 'Too many requests. Please slow down.' },
+  ...limiterOpts,
+})
+app.use(['/api/auth/login', '/api/auth/register'], authLimiter)
+app.use(['/api/uploads', '/api/import'], heavyLimiter)
 
 const upload = multer({
   storage: multer.memoryStorage(),
@@ -191,12 +216,8 @@ app.get('/api/me/events', requireAuth, async (req, res) => {
 //  Import from another calendar (.ics file / URL) + Canvas
 // ------------------------------------------------------------------
 
-async function fetchIcs(url) {
-  const https = url.replace(/^webcal:/i, 'https:')
-  const resp = await fetch(https, { redirect: 'follow' })
-  if (!resp.ok) throw new Error(`Could not fetch calendar (${resp.status})`)
-  return resp.text()
-}
+// SSRF-guarded fetch (blocks internal addresses, caps size, times out).
+const fetchIcs = (url) => safeFetchText(url)
 
 async function doImport(userId, icsText, { tz, defaultType, courseName }) {
   const { calendarName, events } = parseIcs(icsText, { tz, defaultType, courseName })
@@ -509,6 +530,28 @@ app.post('/api/courses/:id/sync/:provider', requireAuth, async (req, res) => {
 // ------------------------------------------------------------------
 //  Boot: connect DB first, then listen.
 // ------------------------------------------------------------------
+// 404 for unknown API routes (JSON, not an HTML page).
+app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }))
+
+// Global error handler — never leak stack traces; always JSON.
+// eslint-disable-next-line no-unused-vars
+app.use((err, _req, res, _next) => {
+  // eslint-disable-next-line no-console
+  console.error('unhandled error:', err?.message || err)
+  if (res.headersSent) return
+  res.status(err?.status || 500).json({ error: 'Something went wrong. Please try again.' })
+})
+
+// Last-resort process guards so one bad promise can't take down the server.
+process.on('unhandledRejection', (reason) => {
+  // eslint-disable-next-line no-console
+  console.error('unhandledRejection:', reason)
+})
+process.on('uncaughtException', (err) => {
+  // eslint-disable-next-line no-console
+  console.error('uncaughtException:', err)
+})
+
 const pushOn = initPush()
 Promise.all([store.initStore(), initSms()]).then(([mode, smsOn]) => {
   app.listen(PORT, () => {

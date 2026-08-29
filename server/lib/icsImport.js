@@ -95,14 +95,18 @@ export function parseIcs(text, { tz = 'UTC', defaultType = 'other', courseName =
       continue
     }
     if (line.startsWith('END:VEVENT')) {
-      if (cur && cur.summary && cur.when) {
+      // The deadline is the END time for timed events (an assignment "due" at X
+      // is the end of its block); all-day events use the start date (DTEND is
+      // the exclusive next day per RFC 5545).
+      const when = cur && (cur.start?.allDay ? cur.start : cur.end || cur.start)
+      if (cur && cur.summary && when) {
         const { title, course } = splitCourse(cur.summary)
         events.push({
           title: title.slice(0, 200) || 'Untitled',
           course: course || courseName || calendarName || 'Imported',
           type: classify(`${cur.summary} ${cur.description || ''}`, defaultType),
-          due: cur.when.dueISO,
-          allDay: cur.when.allDay,
+          due: when.dueISO,
+          allDay: cur.start.allDay,
           externalUid: cur.uid || null,
         })
       }
@@ -120,7 +124,8 @@ export function parseIcs(text, { tz = 'UTC', defaultType = 'other', courseName =
     if (base === 'SUMMARY') cur.summary = decode(value)
     else if (base === 'DESCRIPTION') cur.description = decode(value)
     else if (base === 'UID') cur.uid = value.trim()
-    else if (base === 'DTSTART') cur.when = parseWhen(name, value, tz)
+    else if (base === 'DTSTART') cur.start = parseWhen(name, value, tz)
+    else if (base === 'DTEND') cur.end = parseWhen(name, value, tz)
   }
   return { calendarName, events }
 }

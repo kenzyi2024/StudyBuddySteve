@@ -31,6 +31,19 @@ export function signToken(userId) {
   return jwt.sign({ uid: String(userId) }, secret(), { expiresIn: '7d' })
 }
 
+// Short-lived, single-purpose tokens (email verification, password reset).
+export function signPurposeToken(userId, purpose, expiresIn = '1h') {
+  return jwt.sign({ uid: String(userId), purpose }, secret(), { expiresIn })
+}
+export function verifyPurposeToken(token, purpose) {
+  try {
+    const d = jwt.verify(token, secret())
+    return d.purpose === purpose ? d.uid : null
+  } catch {
+    return null
+  }
+}
+
 // Issue a session: sets the cookie AND returns the raw token for the body.
 export function issueSession(res, userId) {
   const token = signToken(userId)

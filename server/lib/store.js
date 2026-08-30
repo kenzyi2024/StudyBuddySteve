@@ -46,6 +46,8 @@ export const storeMode = () => mode
 export const findUserByEmail = (...a) => impl.findUserByEmail(...a)
 export const createUser = (...a) => impl.createUser(...a)
 export const getUserById = (...a) => impl.getUserById(...a)
+export const setPasswordHash = (...a) => impl.setPasswordHash(...a)
+export const setEmailVerified = (...a) => impl.setEmailVerified(...a)
 export const createCourse = (...a) => impl.createCourse(...a)
 export const setCourseStatus = (...a) => impl.setCourseStatus(...a)
 export const getCourse = (...a) => impl.getCourse(...a)

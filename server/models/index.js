@@ -18,6 +18,7 @@ const UserSchema = new Schema(
     email: { type: String, required: true, unique: true, index: true, lowercase: true, trim: true },
     name: String,
     passwordHash: { type: String, required: true },
+    emailVerified: { type: Boolean, default: false },
     // OAuth tokens for calendar providers (stored per-user).
     google: TokenSchema,
     outlook: TokenSchema,

@@ -8,8 +8,9 @@ import PixelWipe from './components/PixelWipe.jsx'
 import Dashboard from './components/dashboard/Dashboard.jsx'
 import SemesterHome from './components/home/SemesterHome.jsx'
 import AuthModal from './components/AuthModal.jsx'
+import ResetPasswordModal from './components/ResetPasswordModal.jsx'
 import StudyQuiz from './components/home/StudyQuiz.jsx'
-import { me, logout, getMyEvents } from './lib/api.js'
+import { me, logout, getMyEvents, verifyEmail, resendVerification } from './lib/api.js'
 
 const FEATURES = [
   {
@@ -40,9 +41,29 @@ export default function App() {
   const [authOpen, setAuthOpen] = useState(false)
   const [homeEvents, setHomeEvents] = useState([])
   const [quizOpen, setQuizOpen] = useState(false)
+  const [resetToken, setResetToken] = useState(null)
+  const [banner, setBanner] = useState(null) // transient top banner
 
-  // Restore session on load; if the user has saved events, land on their home.
+  // Handle ?verify / ?reset links, then restore session.
   useEffect(() => {
+    const params = new URLSearchParams(window.location.search)
+    const verifyTok = params.get('verify')
+    const reset = params.get('reset')
+    if (verifyTok) {
+      verifyEmail(verifyTok)
+        .then(() => {
+          setBanner('✓ Email verified — thanks!')
+          me().then((r) => setUser(r.user)).catch(() => {})
+        })
+        .catch(() => setBanner('That verification link was invalid or expired.'))
+        .finally(() => window.history.replaceState({}, '', window.location.pathname))
+      setTimeout(() => setBanner(null), 5000)
+    }
+    if (reset) {
+      setResetToken(reset)
+      window.history.replaceState({}, '', window.location.pathname)
+    }
+
     me()
       .then(async (r) => {
         setUser(r.user)
@@ -109,7 +130,44 @@ export default function App() {
         {wipe && <PixelWipe onFinished={() => setWipe(false)} />}
       </AnimatePresence>
 
+      {/* transient top banner (email verified / reset info) */}
+      {banner && (
+        <div className="fixed top-0 inset-x-0 z-[100] bg-lime text-ink border-b-3 border-ink px-4 py-2 font-mono text-lg text-center">
+          {banner}
+        </div>
+      )}
+
+      {/* verify-your-email nudge (soft, non-blocking) */}
+      {user && user.emailVerified === false && (
+        <div className="bg-amber text-ink border-b-3 border-ink px-4 py-2 font-mono text-base flex items-center justify-center gap-3">
+          ▸ Verify your email to secure your account.
+          <button
+            onClick={async () => {
+              await resendVerification().catch(() => {})
+              setBanner('Verification email sent — check your inbox.')
+              setTimeout(() => setBanner(null), 4000)
+            }}
+            className="underline decoration-dashed underline-offset-2 hover:text-magenta"
+          >
+            Resend
+          </button>
+        </div>
+      )}
+
       <AuthModal open={authOpen} onClose={() => setAuthOpen(false)} onAuthed={onAuthed} />
+
+      <ResetPasswordModal
+        token={resetToken}
+        onClose={() => setResetToken(null)}
+        onDone={async (u) => {
+          setResetToken(null)
+          setUser(u)
+          setBanner('✓ Password updated — you’re logged in.')
+          setTimeout(() => setBanner(null), 4000)
+          const ev = await loadHomeEvents()
+          if (ev.length) transitionTo('home')
+        }}
+      />
 
       <StudyQuiz
         open={quizOpen}

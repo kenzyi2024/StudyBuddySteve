@@ -48,6 +48,12 @@ export async function createUser({ email, name, passwordHash }) {
 export async function getUserById(userId) {
   return User.findById(userId)
 }
+export async function setPasswordHash(userId, passwordHash) {
+  await User.updateOne({ _id: userId }, { passwordHash })
+}
+export async function setEmailVerified(userId, val = true) {
+  await User.updateOne({ _id: userId }, { emailVerified: !!val })
+}
 
 // --- courses ---
 export async function createCourse(userId, { name = 'Untitled Course', term = '', file } = {}) {

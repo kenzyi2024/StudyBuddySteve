@@ -87,6 +87,38 @@ export async function logout() {
     setToken(null)
   }
 }
+export async function forgotPassword(email) {
+  return json(
+    await req('/auth/forgot', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    }),
+  )
+}
+export async function resetPassword(token, password) {
+  const r = await json(
+    await req('/auth/reset', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token, password }),
+    }),
+  )
+  if (r.token) setToken(r.token)
+  return r
+}
+export async function verifyEmail(token) {
+  return json(
+    await req('/auth/verify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ token }),
+    }),
+  )
+}
+export async function resendVerification() {
+  return json(await req('/auth/resend-verification', { method: 'POST' }))
+}
 
 // --- uploads & parsing ---
 export async function uploadSyllabus(file, meta = {}) {

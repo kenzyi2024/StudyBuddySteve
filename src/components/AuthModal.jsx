@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
-import { login, register } from '../lib/api.js'
+import { login, register, forgotPassword } from '../lib/api.js'
 
 /**
  * AuthModal — retro login / register dialog.
@@ -16,18 +16,25 @@ export default function AuthModal({ open, onClose, onAuthed }) {
 }
 
 function Inner({ onClose, onAuthed }) {
-  const [mode, setMode] = useState('login') // 'login' | 'register'
+  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
+  const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
 
   const submit = async (e) => {
     e.preventDefault()
     setError('')
+    setNotice('')
     setBusy(true)
     try {
+      if (mode === 'forgot') {
+        await forgotPassword(email)
+        setNotice('If that email has an account, a reset link is on its way. Check your inbox.')
+        return
+      }
       const { user } =
         mode === 'login'
           ? await login({ email, password })
@@ -71,10 +78,14 @@ function Inner({ onClose, onAuthed }) {
             </div>
             <div>
               <h3 className="font-pixel text-sm text-beige leading-tight">
-                {mode === 'login' ? 'WELCOME BACK' : 'JOIN STEVE'}
+                {mode === 'login' ? 'WELCOME BACK' : mode === 'forgot' ? 'RESET PASSWORD' : 'JOIN STEVE'}
               </h3>
               <p className="font-mono text-base text-cyan">
-                {mode === 'login' ? 'log in to sync your semester' : 'create a free account'}
+                {mode === 'login'
+                  ? 'log in to sync your semester'
+                  : mode === 'forgot'
+                    ? 'we’ll email you a reset link'
+                    : 'create a free account'}
               </p>
             </div>
           </div>
@@ -101,44 +112,86 @@ function Inner({ onClose, onAuthed }) {
               autoComplete="email"
             />
           </div>
-          <div>
-            <label className="font-pixel text-[10px] text-cyan block mb-1">PASSWORD</label>
-            <input
-              type="password"
-              required
-              minLength={8}
-              className={field}
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
-            />
-            {mode === 'register' && (
-              <p className="font-body text-xs text-beige/50 mt-1">8+ characters</p>
-            )}
-          </div>
+          {mode !== 'forgot' && (
+            <div>
+              <label className="font-pixel text-[10px] text-cyan block mb-1">PASSWORD</label>
+              <input
+                type="password"
+                required
+                minLength={8}
+                className={field}
+                value={password}
+                onChange={(e) => setPassword(e.target.value)}
+                autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
+              />
+              {mode === 'register' && (
+                <p className="font-body text-xs text-beige/50 mt-1">8+ characters</p>
+              )}
+              {mode === 'login' && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setMode('forgot')
+                    setError('')
+                    setNotice('')
+                  }}
+                  className="font-mono text-base text-beige/50 hover:text-lime mt-1"
+                >
+                  Forgot password?
+                </button>
+              )}
+            </div>
+          )}
 
           {error && (
             <div className="bg-magenta text-ink border-3 border-ink px-3 py-2 font-mono text-base">
               ▸ {error}
             </div>
           )}
+          {notice && (
+            <div className="bg-lime text-ink border-3 border-ink px-3 py-2 font-mono text-base">
+              ▸ {notice}
+            </div>
+          )}
 
           <RetroButton color="lime" size="lg" as="button" type="submit" className="w-full" disabled={busy}>
-            {busy ? 'LOADING…' : mode === 'login' ? '▸ Log In' : '▸ Sign Up'}
+            {busy
+              ? 'LOADING…'
+              : mode === 'login'
+                ? '▸ Log In'
+                : mode === 'forgot'
+                  ? '▸ Send reset link'
+                  : '▸ Sign Up'}
           </RetroButton>
         </form>
 
         <div className="mt-5 text-center font-mono text-lg text-beige/70">
-          {mode === 'login' ? "No account yet?" : 'Already have one?'}{' '}
-          <button
-            onClick={() => {
-              setMode(mode === 'login' ? 'register' : 'login')
-              setError('')
-            }}
-            className="text-cyan hover:text-lime underline decoration-dashed underline-offset-4"
-          >
-            {mode === 'login' ? 'Sign up' : 'Log in'}
-          </button>
+          {mode === 'forgot' ? (
+            <button
+              onClick={() => {
+                setMode('login')
+                setError('')
+                setNotice('')
+              }}
+              className="text-cyan hover:text-lime underline decoration-dashed underline-offset-4"
+            >
+              ← back to log in
+            </button>
+          ) : (
+            <>
+              {mode === 'login' ? "No account yet?" : 'Already have one?'}{' '}
+              <button
+                onClick={() => {
+                  setMode(mode === 'login' ? 'register' : 'login')
+                  setError('')
+                  setNotice('')
+                }}
+                className="text-cyan hover:text-lime underline decoration-dashed underline-offset-4"
+              >
+                {mode === 'login' ? 'Sign up' : 'Log in'}
+              </button>
+            </>
+          )}
         </div>
       </motion.div>
     </motion.div>

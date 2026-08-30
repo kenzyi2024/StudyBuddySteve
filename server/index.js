@@ -18,6 +18,8 @@ import {
   clearSession,
   attachUser,
   requireAuth,
+  signPurposeToken,
+  verifyPurposeToken,
 } from './lib/auth.js'
 import {
   PROVIDERS,
@@ -90,7 +92,7 @@ const heavyLimiter = rateLimit({
   message: { error: 'Too many requests. Please slow down.' },
   ...limiterOpts,
 })
-app.use(['/api/auth/login', '/api/auth/register'], authLimiter)
+app.use(['/api/auth/login', '/api/auth/register', '/api/auth/forgot', '/api/auth/reset'], authLimiter)
 app.use(['/api/uploads', '/api/import'], heavyLimiter)
 
 const upload = multer({
@@ -121,8 +123,21 @@ const publicUser = (u) => ({
   smsEnabled: !!u.smsEnabled,
   emailReminders: !!u.emailReminders,
   reminderLead: u.reminderLead || 24,
+  emailVerified: !!u.emailVerified,
   studyPrefs: u.studyPrefs || null,
 })
+
+// Fire-and-forget: email a verification link (if email is configured).
+function sendVerifyEmail(user) {
+  if (!emailEnabled()) return
+  const token = signPurposeToken(user._id, 'verify', '3d')
+  const link = `${FRONTEND_URL}/?verify=${token}`
+  sendEmail(
+    user.email,
+    'Verify your Study Buddy Steve email',
+    `Hi ${user.name || 'there'},\n\nConfirm your email to secure your account:\n${link}\n\nIf you didn't sign up, ignore this.\n\n— Steve`,
+  ).catch(() => {})
+}
 
 // Regenerate the study plan from the user's committed events + saved prefs.
 // Clears the previous plan first so it's always idempotent.
@@ -143,8 +158,52 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(409).json({ error: 'An account with that email already exists' })
   }
   const user = await store.createUser({ email, name, passwordHash: await hashPassword(password) })
+  sendVerifyEmail(user)
   const token = issueSession(res, user._id)
   res.status(201).json({ user: publicUser(user), token })
+})
+
+// --- password reset ---
+app.post('/api/auth/forgot', async (req, res) => {
+  const user = await store.findUserByEmail(req.body?.email || '')
+  if (user && emailEnabled()) {
+    const token = signPurposeToken(user._id, 'reset', '1h')
+    const link = `${FRONTEND_URL}/?reset=${token}`
+    sendEmail(
+      user.email,
+      'Reset your Study Buddy Steve password',
+      `Hi ${user.name || 'there'},\n\nReset your password (link valid 1 hour):\n${link}\n\nIf you didn't request this, ignore this email.\n\n— Steve`,
+    ).catch(() => {})
+  }
+  // Always 200 — never reveal whether an email is registered.
+  res.json({ ok: true })
+})
+
+app.post('/api/auth/reset', async (req, res) => {
+  const { token, password } = req.body || {}
+  if (!password || password.length < 8) {
+    return res.status(400).json({ error: 'Password must be at least 8 characters' })
+  }
+  const userId = verifyPurposeToken(token, 'reset')
+  const user = userId ? await store.getUserById(userId) : null
+  if (!user) return res.status(400).json({ error: 'This reset link is invalid or has expired' })
+  await store.setPasswordHash(userId, await hashPassword(password))
+  const sess = issueSession(res, userId)
+  res.json({ user: publicUser(user), token: sess })
+})
+
+// --- email verification ---
+app.post('/api/auth/verify', async (req, res) => {
+  const userId = verifyPurposeToken(req.body?.token, 'verify')
+  if (!userId) return res.status(400).json({ error: 'This verification link is invalid or has expired' })
+  await store.setEmailVerified(userId, true)
+  res.json({ ok: true })
+})
+
+app.post('/api/auth/resend-verification', requireAuth, async (req, res) => {
+  const user = await store.getUserById(req.userId)
+  if (user && !user.emailVerified) sendVerifyEmail(user)
+  res.json({ ok: true })
 })
 
 app.post('/api/auth/login', async (req, res) => {

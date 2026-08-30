@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { motion } from 'framer-motion'
+import { AnimatePresence, motion } from 'framer-motion'
 import {
   CalendarDays,
   ListChecks,
@@ -63,6 +63,8 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
   )
   const [remindersOpen, setRemindersOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
+  const [undo, setUndo] = useState(null) // recently-deleted event (undoable)
+  const undoRef = useRef(null)
 
   const refreshEvents = () => getMyEvents().then((r) => setEvents(r.events || [])).catch(() => {})
   const notifiedRef = useRef(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
@@ -92,10 +94,32 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     })
     setEditing(null)
   }
+  // Delete with a 5-second undo: remove from the UI immediately, but only tell
+  // the server after the window closes (unless the student hits Undo).
   const deleteEvent = (id) => {
-    setEvents((prev) => prev.filter((e) => e.id !== id))
-    apiDeleteEvent(id).catch(() => {})
     setEditing(null)
+    const ev = events.find((e) => e.id === id)
+    if (!ev) return
+    // commit any previous pending delete right away
+    if (undoRef.current) {
+      clearTimeout(undoRef.current.timer)
+      apiDeleteEvent(undoRef.current.event.id).catch(() => {})
+    }
+    setEvents((prev) => prev.filter((e) => e.id !== id))
+    const timer = setTimeout(() => {
+      apiDeleteEvent(id).catch(() => {})
+      undoRef.current = null
+      setUndo(null)
+    }, 5000)
+    undoRef.current = { event: ev, timer }
+    setUndo(ev)
+  }
+  const undoDelete = () => {
+    if (!undoRef.current) return
+    clearTimeout(undoRef.current.timer)
+    setEvents((prev) => [...prev, undoRef.current.event])
+    undoRef.current = null
+    setUndo(null)
   }
   // Bulk delete: removes a set of ids locally and on the server.
   const deleteMany = (ids) => {
@@ -462,6 +486,25 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
       />
 
       <ImportModal open={importOpen} onClose={() => setImportOpen(false)} onImported={refreshEvents} />
+
+      {/* undo toast */}
+      <AnimatePresence>
+        {undo && (
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            exit={{ opacity: 0, y: 20 }}
+            className="fixed bottom-5 left-1/2 -translate-x-1/2 z-[90] flex items-center gap-3 bg-dusk border-3 border-ink shadow-chunk-lg px-4 py-3"
+          >
+            <span className="font-mono text-lg text-beige truncate max-w-[180px]">
+              Deleted “{undo.title}”
+            </span>
+            <RetroButton color="lime" size="sm" onClick={undoDelete}>
+              Undo
+            </RetroButton>
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   )
 }

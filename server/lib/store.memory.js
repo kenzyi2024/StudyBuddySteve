@@ -64,6 +64,14 @@ export async function createUser({ email, name, passwordHash }) {
 export async function getUserById(userId) {
   return users.get(userId) || null
 }
+export async function setPasswordHash(userId, passwordHash) {
+  const u = users.get(userId)
+  if (u) u.passwordHash = passwordHash
+}
+export async function setEmailVerified(userId, val = true) {
+  const u = users.get(userId)
+  if (u) u.emailVerified = !!val
+}
 
 // --- courses ---
 export async function createCourse(userId, { name = 'Untitled Course', term = '', file } = {}) {

@@ -248,11 +248,13 @@ export async function getPushSubs(userId) {
   return u?.pushSubs || []
 }
 
-// --- reminder prefs (SMS) ---
-export async function setReminderPrefs(userId, { phone, smsEnabled }) {
+// --- reminder prefs ---
+export async function setReminderPrefs(userId, { phone, smsEnabled, emailReminders, reminderLead }) {
   const patch = {}
   if (phone !== undefined) patch.phone = phone
   if (smsEnabled !== undefined) patch.smsEnabled = !!smsEnabled
+  if (emailReminders !== undefined) patch.emailReminders = !!emailReminders
+  if (reminderLead !== undefined) patch.reminderLead = Number(reminderLead) || 24
   await User.updateOne({ _id: userId }, patch)
 }
 

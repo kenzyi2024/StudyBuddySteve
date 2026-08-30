@@ -1,0 +1,50 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  frontend:
+    name: Frontend build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm run build
+
+  gateway:
+    name: Gateway tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: server
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - run: npm install
+      - run: npm test
+
+  parser:
+    name: Parser tests
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: ai-parser
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: pip install dateparser
+      - run: python -m unittest discover -p "test_*.py"
+
+# To auto-deploy on green main, add a `deploy` job with the Vercel + gcloud
+# actions and repository secrets (VERCEL_TOKEN, GCP credentials). Kept manual
+# for now so deploys stay intentional.

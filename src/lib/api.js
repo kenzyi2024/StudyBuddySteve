@@ -206,12 +206,12 @@ export async function reminderStatus() {
     return { push: false, sms: false }
   }
 }
-export async function saveReminderPrefs({ phone, smsEnabled }) {
+export async function saveReminderPrefs({ phone, smsEnabled, emailReminders, reminderLead }) {
   return json(
     await req('/me/reminders', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone, smsEnabled }),
+      body: JSON.stringify({ phone, smsEnabled, emailReminders, reminderLead }),
     }),
   )
 }

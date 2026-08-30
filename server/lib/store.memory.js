@@ -54,6 +54,8 @@ export async function createUser({ email, name, passwordHash }) {
     pushSubs: [],
     phone: '',
     smsEnabled: false,
+    emailReminders: false,
+    reminderLead: 24,
   }
   users.set(_id, user)
   usersByEmail.set(user.email, _id)
@@ -279,11 +281,13 @@ export async function getPushSubs(userId) {
   return users.get(userId)?.pushSubs || []
 }
 
-export async function setReminderPrefs(userId, { phone, smsEnabled }) {
+export async function setReminderPrefs(userId, { phone, smsEnabled, emailReminders, reminderLead }) {
   const u = users.get(userId)
   if (!u) return
   if (phone !== undefined) u.phone = phone
   if (smsEnabled !== undefined) u.smsEnabled = !!smsEnabled
+  if (emailReminders !== undefined) u.emailReminders = !!emailReminders
+  if (reminderLead !== undefined) u.reminderLead = Number(reminderLead) || 24
 }
 
 // --- reminders ---

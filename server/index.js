@@ -31,6 +31,7 @@ import {
 import { pushEvents } from './lib/calendarSync.js'
 import { initPush, pushEnabled, publicKey, sendPush } from './lib/push.js'
 import { initSms, smsEnabled, sendSms } from './lib/sms.js'
+import { initEmail, emailEnabled, sendEmail } from './lib/email.js'
 import { generatePlan, DEFAULT_PREFS } from './lib/studyPlanner.js'
 
 dotenv.config()
@@ -118,6 +119,8 @@ const publicUser = (u) => ({
   name: u.name || '',
   phone: u.phone || '',
   smsEnabled: !!u.smsEnabled,
+  emailReminders: !!u.emailReminders,
+  reminderLead: u.reminderLead || 24,
   studyPrefs: u.studyPrefs || null,
 })
 
@@ -409,18 +412,21 @@ app.post('/api/push/unsubscribe', requireAuth, async (req, res) => {
 
 // Which reminder channels are available server-side (frontend hides the rest).
 app.get('/api/reminders/status', (_req, res) => {
-  res.json({ push: pushEnabled(), sms: smsEnabled() })
+  res.json({ push: pushEnabled(), sms: smsEnabled(), email: emailEnabled() })
 })
 
-// Save SMS reminder preferences (phone number + opt-in).
+// Save reminder preferences (phone/SMS, email opt-in, lead time).
 app.post('/api/me/reminders', requireAuth, async (req, res) => {
-  const { phone, smsEnabled: sms } = req.body || {}
+  const { phone, smsEnabled: sms, emailReminders, reminderLead } = req.body || {}
   if (sms && !/^\+?[1-9]\d{7,14}$/.test((phone || '').replace(/[\s()-]/g, ''))) {
     return res.status(400).json({ error: 'Enter a valid phone number in international format, e.g. +15551234567' })
   }
+  const allowedLead = [24, 48, 72, 168]
   await store.setReminderPrefs(req.userId, {
     phone: (phone || '').replace(/[\s()-]/g, ''),
     smsEnabled: !!sms,
+    emailReminders: !!emailReminders,
+    reminderLead: allowedLead.includes(Number(reminderLead)) ? Number(reminderLead) : 24,
   })
   const user = await store.getUserById(req.userId)
   res.json({ user: publicUser(user) })
@@ -434,21 +440,32 @@ app.post('/api/cron/send-reminders', async (req, res) => {
   if (!secret || req.headers['x-cron-key'] !== secret) {
     return res.status(403).json({ error: 'Forbidden' })
   }
-  if (!pushEnabled() && !smsEnabled()) {
-    return res.json({ sent: 0, note: 'no channels configured (set VAPID and/or Twilio keys)' })
+  if (!pushEnabled() && !smsEnabled() && !emailEnabled()) {
+    return res.json({ sent: 0, note: 'no channels configured (set VAPID / Twilio / SMTP)' })
   }
 
-  const hours = Number(req.query.hours) || 24
-  const due = await store.dueSoonUnreminded(hours)
+  // Gather everything due within the widest supported lead (1 week), then apply
+  // each student's own lead-time window.
+  const MAX_LEAD_HOURS = 168
+  const due = await store.dueSoonUnreminded(MAX_LEAD_HOURS)
   const byUser = {}
   for (const e of due) (byUser[e.userId] ||= []).push(e)
 
+  const now = Date.now()
   let pushSent = 0
   let smsSent = 0
+  let emailSent = 0
   const remindedIds = []
-  for (const [userId, items] of Object.entries(byUser)) {
+
+  for (const [userId, all] of Object.entries(byUser)) {
+    const user = await store.getUserById(userId)
+    const leadHours = user?.reminderLead || 24
+    // only items now inside this user's lead window
+    const items = all.filter((i) => (new Date(i.due).getTime() - now) / 3600000 <= leadHours)
+    if (!items.length) continue
+
     const title = items.length === 1 ? '⏰ 1 deadline coming up' : `⏰ ${items.length} deadlines coming up`
-    const lines = items.slice(0, 4).map((i) => `• ${i.title}${i.course ? ` (${i.course})` : ''}`)
+    const lines = items.slice(0, 6).map((i) => `• ${i.title}${i.course ? ` (${i.course})` : ''}`)
     const body = lines.join('\n')
     let delivered = false
 
@@ -465,31 +482,46 @@ app.post('/api/cron/send-reminders', async (req, res) => {
     }
 
     // 2) SMS
-    if (smsEnabled()) {
-      const user = await store.getUserById(userId)
-      if (user?.smsEnabled && user?.phone) {
-        try {
-          await sendSms(user.phone, `Study Buddy Steve — ${title}\n${lines.join('\n')}`)
-          smsSent++
-          delivered = true
-        } catch {
-          /* SMS failed for this user; keep going */
-        }
+    if (smsEnabled() && user?.smsEnabled && user?.phone) {
+      try {
+        await sendSms(user.phone, `Study Buddy Steve — ${title}\n${lines.join('\n')}`)
+        smsSent++
+        delivered = true
+      } catch {
+        /* keep going */
+      }
+    }
+
+    // 3) email
+    if (emailEnabled() && user?.emailReminders && user?.email) {
+      try {
+        await sendEmail(
+          user.email,
+          `Study Buddy Steve — ${title}`,
+          `Hi ${user.name || 'there'},\n\nYou have deadlines coming up:\n\n${lines.join('\n')}\n\nOpen your calendar: ${FRONTEND_URL}\n\n— Steve`,
+        )
+        emailSent++
+        delivered = true
+      } catch {
+        /* keep going */
       }
     }
 
     if (delivered) remindedIds.push(...items.map((i) => i.id))
   }
   await store.markReminded(remindedIds)
-  res.json({ users: Object.keys(byUser).length, pushSent, smsSent, events: remindedIds.length })
+  res.json({ users: Object.keys(byUser).length, pushSent, smsSent, emailSent, events: remindedIds.length })
 })
 
 // One .ics for the user's ENTIRE account (all courses) — subscribe once.
 app.get('/api/me/calendar.ics', requireAuth, async (req, res) => {
-  const events = await store.allEventsForUser(req.userId)
+  const [events, user] = await Promise.all([
+    store.allEventsForUser(req.userId),
+    store.getUserById(req.userId),
+  ])
   const ics = buildICS(events, {
     calName: 'My Semester · Study Buddy Steve',
-    reminderMinutes: Number(req.query.reminder) || 60,
+    reminderMinutes: Number(req.query.reminder) || (user?.reminderLead || 24) * 60,
   })
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
   res.setHeader('Content-Disposition', 'attachment; filename="my-semester.ics"')
@@ -585,11 +617,11 @@ process.on('uncaughtException', (err) => {
 })
 
 const pushOn = initPush()
-Promise.all([store.initStore(), initSms()]).then(([mode, smsOn]) => {
+Promise.all([store.initStore(), initSms(), initEmail()]).then(([mode, smsOn, emailOn]) => {
   app.listen(PORT, () => {
     // eslint-disable-next-line no-console
     console.log(
-      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}]`,
+      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}] [email: ${emailOn ? 'on' : 'off'}]`,
     )
   })
 })

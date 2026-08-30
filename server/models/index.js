@@ -23,9 +23,11 @@ const UserSchema = new Schema(
     outlook: TokenSchema,
     // Web Push subscriptions (one per browser/device the student enabled).
     pushSubs: { type: [Schema.Types.Mixed], default: [] },
-    // SMS reminder preferences.
+    // Reminder preferences.
     phone: String,
     smsEnabled: { type: Boolean, default: false },
+    emailReminders: { type: Boolean, default: false },
+    reminderLead: { type: Number, default: 24 }, // hours before due to remind
     // Saved Canvas calendar-feed URL + the student's timezone (for scheduled
     // re-sync, which has no browser to read the timezone from).
     canvasFeedUrl: String,

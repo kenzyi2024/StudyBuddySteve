@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, BellRing, Smartphone, CalendarClock, Check, Download, ExternalLink, Copy } from 'lucide-react'
+import { X, BellRing, Smartphone, CalendarClock, Check, Download, ExternalLink, Copy, Mail, Clock } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import Steve from '../Steve.jsx'
 import {
@@ -59,6 +59,8 @@ function Inner({ onClose, user }) {
   const [pushState, setPushState] = useState('off') // on | off | denied | unsupported | working
   const [phone, setPhone] = useState(user?.phone || '')
   const [smsOn, setSmsOn] = useState(!!user?.smsEnabled)
+  const [emailOn, setEmailOn] = useState(!!user?.emailReminders)
+  const [lead, setLead] = useState(user?.reminderLead || 24)
   const [msg, setMsg] = useState(null)
 
   useEffect(() => {
@@ -136,14 +138,44 @@ function Inner({ onClose, user }) {
     pushState === 'on' ? disablePush() : enablePush()
   }
 
-  const saveSms = async () => {
+  // Persist all reminder prefs together (channels + lead time). `over` lets a
+  // control pass its new value without waiting for state to settle.
+  const persist = async (over = {}) => {
     try {
-      await saveReminderPrefs({ phone, smsEnabled: smsOn })
-      flash(smsOn ? 'Text reminders saved!' : 'Text reminders turned off.')
+      await saveReminderPrefs({
+        phone,
+        smsEnabled: smsOn,
+        emailReminders: emailOn,
+        reminderLead: lead,
+        ...over,
+      })
+      return true
     } catch (e) {
-      flash(e.message || 'Could not save — use international format, e.g. +15551234567.')
+      flash(e.message || 'Could not save — check the phone format (+15551234567).')
+      return false
     }
   }
+
+  const saveSms = async () => {
+    if (await persist()) flash(smsOn ? 'Text reminders saved!' : 'Text reminders turned off.')
+  }
+
+  const chooseLead = async (v) => {
+    setLead(v)
+    if (await persist({ reminderLead: v })) flash('Reminder timing updated.')
+  }
+
+  const toggleEmail = async (v) => {
+    setEmailOn(v)
+    if (await persist({ emailReminders: v })) flash(v ? 'Email reminders on.' : 'Email reminders off.')
+  }
+
+  const LEADS = [
+    [24, '1 day'],
+    [48, '2 days'],
+    [72, '3 days'],
+    [168, '1 week'],
+  ]
 
   const downloadIcs = () => {
     const a = document.createElement('a')
@@ -203,6 +235,26 @@ function Inner({ onClose, user }) {
           </button>
         </div>
 
+        {/* lead time — applies to every channel */}
+        <div className="border-3 border-ink bg-void p-4 mb-3">
+          <div className="flex items-center gap-2 mb-2">
+            <Clock size={18} className="text-amber" />
+            <span className="font-pixel text-[11px] text-beige">REMIND ME</span>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {LEADS.map(([v, label]) => (
+              <button
+                key={v}
+                onClick={() => chooseLead(v)}
+                className={`px-3 py-1.5 border-3 border-ink font-mono text-base transition-colors
+                  ${lead === v ? 'bg-amber text-ink' : 'bg-void text-beige/70 hover:bg-dusk'}`}
+              >
+                {label} before
+              </button>
+            ))}
+          </div>
+        </div>
+
         {/* 1. device notifications — toggle */}
         <div className="border-3 border-ink bg-void p-4 mb-3">
           <div className="flex items-center justify-between gap-3">
@@ -221,7 +273,23 @@ function Inner({ onClose, user }) {
           </p>
         </div>
 
-        {/* 2. text messages — always set up here */}
+        {/* 2. email — reliable everywhere, incl. iOS */}
+        <div className="border-3 border-ink bg-void p-4 mb-3">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-2">
+              <Mail size={18} className="text-lime" />
+              <span className="font-pixel text-[11px] text-beige">EMAIL</span>
+            </div>
+            <Toggle on={emailOn} disabled={!server.email} onClick={() => toggleEmail(!emailOn)} />
+          </div>
+          <p className="font-mono text-base text-beige/60 mt-2">
+            {server.email
+              ? `Deadline digests to ${user?.email || 'your inbox'} — works on any device.`
+              : 'Email isn’t set up by the app owner yet (needs an SMTP sender).'}
+          </p>
+        </div>
+
+        {/* 3. text messages — always set up here */}
         <div className="border-3 border-ink bg-void p-4 mb-3">
           <div className="flex items-center gap-2 mb-2">
             <Smartphone size={18} className="text-magenta" />

@@ -84,6 +84,16 @@ const EventSchema = new Schema(
   { timestamps: true },
 )
 
+// Compound indexes for the hot query paths:
+//  - account calendar / task list: events for a user that are committed, by due
+//  - reminder cron: due-window scan of committed, not-done, not-reminded events
+//  - review screen: events for a course
+//  - import dedupe: lookups by externalUid
+EventSchema.index({ user: 1, committed: 1, due: 1 })
+EventSchema.index({ due: 1, committed: 1, done: 1, reminded: 1 })
+EventSchema.index({ course: 1, user: 1 })
+EventSchema.index({ user: 1, 'source.method': 1 }) // clear plan / import sources
+
 export const User = model('User', UserSchema)
 export const Course = model('Course', CourseSchema)
 export const Event = model('Event', EventSchema)

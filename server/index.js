@@ -35,6 +35,7 @@ import { initPush, pushEnabled, publicKey, sendPush } from './lib/push.js'
 import { initSms, smsEnabled, sendSms } from './lib/sms.js'
 import { initEmail, emailEnabled, sendEmail } from './lib/email.js'
 import { generatePlan, DEFAULT_PREFS } from './lib/studyPlanner.js'
+import { initMonitoring, captureError } from './lib/monitoring.js'
 
 dotenv.config()
 
@@ -661,6 +662,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Not found' }))
 app.use((err, _req, res, _next) => {
   // eslint-disable-next-line no-console
   console.error('unhandled error:', err?.message || err)
+  captureError(err)
   if (res.headersSent) return
   res.status(err?.status || 500).json({ error: 'Something went wrong. Please try again.' })
 })
@@ -669,18 +671,22 @@ app.use((err, _req, res, _next) => {
 process.on('unhandledRejection', (reason) => {
   // eslint-disable-next-line no-console
   console.error('unhandledRejection:', reason)
+  captureError(reason)
 })
 process.on('uncaughtException', (err) => {
   // eslint-disable-next-line no-console
   console.error('uncaughtException:', err)
+  captureError(err)
 })
 
 const pushOn = initPush()
-Promise.all([store.initStore(), initSms(), initEmail()]).then(([mode, smsOn, emailOn]) => {
-  app.listen(PORT, () => {
-    // eslint-disable-next-line no-console
-    console.log(
-      `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}] [email: ${emailOn ? 'on' : 'off'}]`,
-    )
-  })
-})
+Promise.all([store.initStore(), initSms(), initEmail(), initMonitoring()]).then(
+  ([mode, smsOn, emailOn, monOn]) => {
+    app.listen(PORT, () => {
+      // eslint-disable-next-line no-console
+      console.log(
+        `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}] [email: ${emailOn ? 'on' : 'off'}] [sentry: ${monOn ? 'on' : 'off'}]`,
+      )
+    })
+  },
+)

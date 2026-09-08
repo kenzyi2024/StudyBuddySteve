@@ -9,8 +9,6 @@ import {
   Download,
   Bell,
   BellRing,
-  Check,
-  Clock,
   Flame,
   LogOut,
   Trash2,
@@ -19,37 +17,14 @@ import {
 } from 'lucide-react'
 import Steve from '../Steve.jsx'
 import RetroButton from '../RetroButton.jsx'
-import TypeBadge from '../dashboard/TypeBadge.jsx'
 import CalendarView from '../dashboard/CalendarView.jsx'
 import EventEditor from '../dashboard/EventEditor.jsx'
 import RemindersModal from './RemindersModal.jsx'
 import ImportModal from './ImportModal.jsx'
-import { fmtTime, fmtDateLong, typeMeta, courseColors } from '../../data/events.js'
+import TaskRow from './TaskRow'
+import { courseColors } from '../../data/events.js'
+import { daysUntil, countdownLabel } from '../../lib/schedule'
 import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl, getMyEvents } from '../../lib/api.js'
-
-// Whole-day difference between an event's wall-clock date and today.
-function daysUntil(iso) {
-  const d = new Date(iso)
-  const due = Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate())
-  const n = new Date()
-  const today = Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())
-  return Math.round((due - today) / 86400000)
-}
-
-function countdownLabel(days) {
-  if (days < 0) return `${Math.abs(days)}d overdue`
-  if (days === 0) return 'Due today'
-  if (days === 1) return 'Due tomorrow'
-  return `in ${days} days`
-}
-
-function urgencyColor(days, done) {
-  if (done) return 'text-beige/40'
-  if (days < 0) return 'text-magenta'
-  if (days <= 1) return 'text-amber'
-  if (days <= 3) return 'text-lime'
-  return 'text-cyan'
-}
 
 const NOTIFIED_KEY = 'steve_notified'
 
@@ -219,53 +194,18 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     )
   }
 
-  const TaskRow = ({ e }) => {
-    const days = daysUntil(e.due)
-    const meta = typeMeta(e.type)
-    return (
-      <motion.div
-        layout
-        className={`retro-panel noise flex items-center gap-3 p-3 pl-2 shadow-chunk overflow-hidden ${e.done ? 'opacity-60' : ''}`}
-      >
-        {/* per-course color stripe */}
-        <span
-          aria-hidden
-          className="self-stretch w-2 -my-3 -ml-2 mr-1 shrink-0"
-          style={{ backgroundColor: courseHex(e.course) }}
-        />
-        <button
-          onClick={() => toggleDone(e.id)}
-          aria-label={e.done ? 'Mark not done' : 'Mark done'}
-          className={`shrink-0 w-8 h-8 grid place-items-center border-3 border-ink transition-colors
-            ${e.done ? 'bg-lime' : 'bg-void hover:bg-dusk'}`}
-        >
-          {e.done && <Check size={16} className="text-ink" strokeWidth={3} />}
-        </button>
-        <button onClick={() => setEditing(e)} className="flex-1 min-w-0 text-left">
-          <div className={`font-body font-bold text-beige truncate ${e.done ? 'line-through' : ''}`}>
-            {e.title}
-          </div>
-          <div className="flex items-center gap-3 font-mono text-base text-beige/60 mt-0.5">
-            {e.course && <span className={`text-${courseColor(e.course)}`}>{e.course}</span>}
-            <span className="flex items-center gap-1">
-              <Clock size={12} /> {fmtDateLong(e.due).replace(/^.*· /, '')} · {fmtTime(e.due, e.allDay)}
-            </span>
-          </div>
-        </button>
-        <span className={`font-mono text-base whitespace-nowrap ${urgencyColor(days, e.done)}`}>
-          {e.done ? 'done' : countdownLabel(days)}
-        </span>
-        <TypeBadge type={e.type} label={e.label} size="sm" />
-        <button
-          onClick={() => deleteEvent(e.id)}
-          aria-label="Delete task"
-          className="shrink-0 w-8 h-8 grid place-items-center border-3 border-ink bg-void text-magenta hover:bg-magenta hover:text-ink transition-colors"
-        >
-          <Trash2 size={15} />
-        </button>
-      </motion.div>
-    )
-  }
+  // Render a task row (extracted to ./TaskRow) with the course-scoped colors.
+  const row = (e) => (
+    <TaskRow
+      key={e.id}
+      e={e}
+      courseColorName={courseColor(e.course)}
+      courseHex={courseHex(e.course)}
+      onToggleDone={toggleDone}
+      onEdit={setEditing}
+      onDelete={deleteEvent}
+    />
+  )
 
   return (
     <div className="min-h-screen">
@@ -340,7 +280,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
         {/* per-course filter chips */}
         {courses.length > 1 && (
           <div className="flex items-center gap-2 flex-wrap">
-            <span className="font-pixel text-[10px] text-beige/50 mr-1">COURSE:</span>
+            <span className="font-pixel text-[10px] text-beige/70 mr-1">COURSE:</span>
             <button
               onClick={() => setCourseFilter(null)}
               className={`px-3 py-1.5 border-3 border-ink font-mono text-base transition-colors
@@ -374,7 +314,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
                 <div key={c.label} className={`retro-panel noise p-4 shadow-chunk`}>
                   <div className="font-pixel text-[10px] text-beige/60 mb-1 uppercase">{c.label}</div>
                   <div className={`font-pixel text-xl text-${c.color}`}>{c.value}</div>
-                  <div className="font-mono text-base text-beige/50">{c.sub}</div>
+                  <div className="font-mono text-base text-beige/70">{c.sub}</div>
                 </div>
               ))}
             </div>
@@ -402,11 +342,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
                 <h3 className="font-pixel text-sm text-beige">UPCOMING DEADLINES</h3>
               </div>
               {upcoming.length ? (
-                <div className="space-y-2">
-                  {upcoming.map((e) => (
-                    <TaskRow key={e.id} e={e} />
-                  ))}
-                </div>
+                <div className="space-y-2">{upcoming.map((e) => row(e))}</div>
               ) : (
                 <div className="retro-panel noise p-8 text-center">
                   <Steve mood="celebrate" size={90} />
@@ -446,7 +382,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
               </div>
             )}
             {openTasks.length ? (
-              openTasks.map((e) => <TaskRow key={e.id} e={e} />)
+              openTasks.map((e) => row(e))
             ) : (
               <div className="retro-panel noise p-8 text-center">
                 <Steve mood="celebrate" size={90} />
@@ -458,11 +394,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
                 <summary className="font-pixel text-[11px] text-beige/60 cursor-pointer py-2">
                   ✓ COMPLETED ({scoped.filter((e) => e.done).length})
                 </summary>
-                <div className="space-y-2 mt-2">
-                  {scoped.filter((e) => e.done).map((e) => (
-                    <TaskRow key={e.id} e={e} />
-                  ))}
-                </div>
+                <div className="space-y-2 mt-2">{scoped.filter((e) => e.done).map((e) => row(e))}</div>
               </details>
             )}
           </div>

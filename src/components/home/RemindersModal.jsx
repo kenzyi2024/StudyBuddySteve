@@ -11,7 +11,7 @@ import {
   saveReminderPrefs,
   myCalendarIcsUrl,
 } from '../../lib/api.js'
-import { useEscToClose } from '../../lib/useEscToClose.js'
+import { useModalA11y } from '../../lib/useModalA11y'
 
 function urlB64ToUint8Array(base64) {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
@@ -63,7 +63,7 @@ function Inner({ onClose, user }) {
   const [emailOn, setEmailOn] = useState(!!user?.emailReminders)
   const [lead, setLead] = useState(user?.reminderLead || 24)
   const [msg, setMsg] = useState(null)
-  useEscToClose(onClose)
+  const dialogRef = useModalA11y(onClose)
 
   useEffect(() => {
     reminderStatus().then(setServer)
@@ -223,10 +223,12 @@ function Inner({ onClose, user }) {
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Reminder settings"
-        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg max-h-[90vh] overflow-y-auto"
+        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg max-h-[90vh] overflow-y-auto outline-none"
       >
         <div className="flex items-start justify-between mb-5">
           <div className="flex items-center gap-3">

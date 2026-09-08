@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
 import { resetPassword } from '../lib/api.js'
-import { useEscToClose } from '../lib/useEscToClose.js'
+import { useModalA11y } from '../lib/useModalA11y'
 
 /**
  * ResetPasswordModal — shown when the app opens with a ?reset=<token> link.
@@ -21,7 +21,7 @@ function Inner({ token, onDone, onClose }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
-  useEscToClose(onClose)
+  const dialogRef = useModalA11y(onClose)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -52,10 +52,12 @@ function Inner({ token, onDone, onClose }) {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Set a new password"
-        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
+        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg outline-none"
       >
         <div className="flex items-center gap-3 mb-4">
           <div className="w-10">
@@ -75,7 +77,7 @@ function Inner({ token, onDone, onClose }) {
               onChange={(e) => setPassword(e.target.value)}
               autoComplete="new-password"
             />
-            <p className="font-body text-xs text-beige/50 mt-1">8+ characters</p>
+            <p className="font-body text-xs text-beige/70 mt-1">8+ characters</p>
           </div>
           {error && (
             <div className="bg-magenta text-ink border-3 border-ink px-3 py-2 font-mono text-base">

@@ -8,7 +8,7 @@ export const EVENT_TYPES = {
   homework: { label: 'Homework', color: 'lime', hex: '#b8ff2e', icon: 'PencilLine' },
   quiz: { label: 'Quiz', color: 'amber', hex: '#ffb020', icon: 'HelpCircle' },
   exam: { label: 'Exam', color: 'magenta', hex: '#ff2e97', icon: 'AlertTriangle' },
-  project: { label: 'Project', color: 'grape', hex: '#7b2ff7', icon: 'FolderGit2' },
+  project: { label: 'Project', color: 'grape', hex: '#9b6bff', icon: 'FolderGit2' },
   study: { label: 'Study', color: 'crt', hex: '#4dffb8', icon: 'Coffee' },
   other: { label: 'Other', color: 'beige', hex: '#e8e0c8', icon: 'Star' },
   // legacy alias
@@ -26,7 +26,7 @@ export const COURSE_PALETTE = [
   { name: 'magenta', hex: '#ff2e97' },
   { name: 'lime', hex: '#b8ff2e' },
   { name: 'amber', hex: '#ffb020' },
-  { name: 'grape', hex: '#7b2ff7' },
+  { name: 'grape', hex: '#9b6bff' },
   { name: 'crt', hex: '#4dffb8' },
 ]
 

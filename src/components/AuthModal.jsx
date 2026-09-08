@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
 import { login, register, forgotPassword } from '../lib/api.js'
-import { useEscToClose } from '../lib/useEscToClose.js'
+import { useModalA11y } from '../lib/useModalA11y'
 
 /**
  * AuthModal — retro login / register dialog.
@@ -24,7 +24,7 @@ function Inner({ onClose, onAuthed }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
-  useEscToClose(onClose)
+  const dialogRef = useModalA11y(onClose)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -71,10 +71,12 @@ function Inner({ onClose, onAuthed }) {
         exit={{ scale: 0.85, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Sign in or create an account"
-        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
+        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg outline-none"
       >
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">
@@ -130,7 +132,7 @@ function Inner({ onClose, onAuthed }) {
                 autoComplete={mode === 'login' ? 'current-password' : 'new-password'}
               />
               {mode === 'register' && (
-                <p className="font-body text-xs text-beige/50 mt-1">8+ characters</p>
+                <p className="font-body text-xs text-beige/70 mt-1">8+ characters</p>
               )}
               {mode === 'login' && (
                 <button
@@ -140,7 +142,7 @@ function Inner({ onClose, onAuthed }) {
                     setError('')
                     setNotice('')
                   }}
-                  className="font-mono text-base text-beige/50 hover:text-lime mt-1"
+                  className="font-mono text-base text-beige/70 hover:text-lime mt-1"
                 >
                   Forgot password?
                 </button>

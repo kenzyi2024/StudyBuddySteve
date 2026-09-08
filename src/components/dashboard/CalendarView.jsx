@@ -234,7 +234,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
               )
             })}
           </div>
-          <p className="font-mono text-base text-beige/40 mt-3 text-center">
+          <p className="font-mono text-base text-beige/60 mt-3 text-center">
             ▸ click a day to see everything · drag a chip to reschedule
           </p>
         </>
@@ -332,7 +332,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
                     </button>
                   ))
                 ) : (
-                  <p className="font-mono text-lg text-beige/50 text-center py-4">Nothing due — free day!</p>
+                  <p className="font-mono text-lg text-beige/70 text-center py-4">Nothing due — free day!</p>
                 )}
               </div>
 
@@ -367,7 +367,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
                 <span className={`flex-1 font-body font-bold text-beige truncate ${e.done ? 'line-through' : ''}`}>
                   {e.title}
                 </span>
-                {e.course && <span className="font-mono text-base text-beige/50 hidden sm:block">{e.course}</span>}
+                {e.course && <span className="font-mono text-base text-beige/70 hidden sm:block">{e.course}</span>}
                 <TypeBadge type={e.type} label={e.label} size="sm" />
               </button>
             ))

@@ -4,7 +4,7 @@ import { X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import Steve from '../Steve.jsx'
 import { saveStudyPrefs } from '../../lib/api.js'
-import { useEscToClose } from '../../lib/useEscToClose.js'
+import { useModalA11y } from '../../lib/useModalA11y'
 
 // The quiz — each question maps to one study preference.
 const QUESTIONS = [
@@ -76,7 +76,7 @@ function Inner({ onClose, onDone }) {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState({})
   const [busy, setBusy] = useState(false)
-  useEscToClose(onClose)
+  const dialogRef = useModalA11y(onClose)
   const total = QUESTIONS.length
   const done = step >= total
 
@@ -109,10 +109,12 @@ function Inner({ onClose, onDone }) {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Study style quiz"
-        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
+        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg outline-none"
       >
         <div className="flex items-start justify-between mb-4">
           <div className="flex items-center gap-3">

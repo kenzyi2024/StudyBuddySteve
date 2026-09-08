@@ -24,7 +24,7 @@ export default {
         cyan: '#22e0ff',       // electric cyan
         lime: '#b8ff2e',       // radioactive green
         amber: '#ffb020',      // CRT amber
-        grape: '#7b2ff7',      // synth purple
+        grape: '#9b6bff',      // synth purple (AA-contrast: text on dark + ink on it)
         crt: '#4dffb8',        // phosphor green (Steve's screen)
       },
       fontFamily: {

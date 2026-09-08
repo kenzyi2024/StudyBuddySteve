@@ -3,7 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import { EVENT_TYPES, EDITABLE_TYPES } from '../../data/events.js'
-import { useEscToClose } from '../../lib/useEscToClose.js'
+import { useModalA11y } from '../../lib/useModalA11y'
 
 // Split an ISO string into <input type=date> and <input type=time> values,
 // reading the wall-clock (UTC) parts so times never shift by timezone.
@@ -37,7 +37,7 @@ function Inner({ event, onSave, onClose, onDelete }) {
   // Default a timed deadline to 11:59 PM unless the event already has a time.
   const [time, setTime] = useState(event.allDay ? '23:59' : init.time || '23:59')
   const [allDay, setAllDay] = useState(event.allDay)
-  useEscToClose(onClose)
+  const dialogRef = useModalA11y(onClose)
 
   const save = () => {
     const [y, m, d] = date.split('-').map(Number)
@@ -74,10 +74,12 @@ function Inner({ event, onSave, onClose, onDelete }) {
         exit={{ scale: 0.85, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
+        ref={dialogRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-label="Edit event"
-        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
+        className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg outline-none"
       >
         <div className="flex items-center justify-between mb-5">
           <h3 className="font-pixel text-sm text-beige">EDIT EVENT</h3>

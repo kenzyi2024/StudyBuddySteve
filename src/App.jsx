@@ -306,7 +306,7 @@ export default function App() {
                 HI, I&apos;M STEVE!
               </motion.div>
             </motion.div>
-            <p className="font-mono text-lg text-beige/50 mt-4">
+            <p className="font-mono text-lg text-beige/70 mt-4">
               your syllabus-eating study buddy
             </p>
           </div>
@@ -350,7 +350,7 @@ export default function App() {
                 >
                   <f.icon size={28} className="text-ink" strokeWidth={2.5} />
                 </div>
-                <div className="font-pixel text-[11px] text-beige/50 mb-2">
+                <div className="font-pixel text-[11px] text-beige/70 mb-2">
                   0{i + 1}
                 </div>
                 <h3 className={`font-pixel text-sm text-${f.color} mb-3`}>
@@ -418,7 +418,7 @@ export default function App() {
       {/* ---------- FOOTER ---------- */}
       <footer className="border-t-5 border-ink bg-dusk mt-10">
         <div className="max-w-6xl mx-auto px-5 py-6 flex flex-col sm:flex-row items-center justify-between gap-4">
-          <span className="font-mono text-lg text-beige/50">
+          <span className="font-mono text-lg text-beige/70">
             © {new Date().getFullYear()} Study Buddy Steve · made with ▮ and CRT glow
           </span>
           <a

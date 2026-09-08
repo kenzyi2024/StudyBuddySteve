@@ -4,6 +4,7 @@ import { ChevronLeft, ChevronRight, X } from 'lucide-react'
 import RetroButton from '../RetroButton.jsx'
 import TypeBadge from './TypeBadge.jsx'
 import { MONTHS, WEEKDAYS, monthGrid, sameDay, typeMeta, fmtTime, courseColors } from '../../data/events.js'
+import { useEscToClose } from '../../lib/useEscToClose.js'
 
 /**
  * CalendarView — chunky retro calendar with Year / Month / Week / Day views.
@@ -21,6 +22,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
   const [mode, setMode] = useState('month') // year | month | week | day
   const [dropTarget, setDropTarget] = useState(null)
   const [peek, setPeek] = useState(null) // {y,m,d} day-detail popover
+  useEscToClose(peek ? () => setPeek(null) : undefined)
 
   // Per-course colors (chips are colored by course; type still shown on badges).
   const cColors = courseColors(events)
@@ -293,6 +295,9 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
               exit={{ scale: 0.9, opacity: 0 }}
               transition={{ type: 'spring', stiffness: 320, damping: 24 }}
               onClick={(e) => e.stopPropagation()}
+              role="dialog"
+              aria-modal="true"
+              aria-label="Events for the selected day"
               className="retro-panel noise w-full max-w-sm p-4 shadow-chunk-lg"
             >
               <div className="flex items-center justify-between mb-3">

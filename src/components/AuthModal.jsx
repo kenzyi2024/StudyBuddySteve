@@ -4,6 +4,7 @@ import { X } from 'lucide-react'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
 import { login, register, forgotPassword } from '../lib/api.js'
+import { useEscToClose } from '../lib/useEscToClose.js'
 
 /**
  * AuthModal — retro login / register dialog.
@@ -23,6 +24,7 @@ function Inner({ onClose, onAuthed }) {
   const [error, setError] = useState('')
   const [notice, setNotice] = useState('')
   const [busy, setBusy] = useState(false)
+  useEscToClose(onClose)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -69,6 +71,9 @@ function Inner({ onClose, onAuthed }) {
         exit={{ scale: 0.85, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Sign in or create an account"
         className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
       >
         <div className="flex items-start justify-between mb-4">

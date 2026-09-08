@@ -3,6 +3,7 @@ import { AnimatePresence, motion } from 'framer-motion'
 import Steve from './Steve.jsx'
 import RetroButton from './RetroButton.jsx'
 import { resetPassword } from '../lib/api.js'
+import { useEscToClose } from '../lib/useEscToClose.js'
 
 /**
  * ResetPasswordModal — shown when the app opens with a ?reset=<token> link.
@@ -20,6 +21,7 @@ function Inner({ token, onDone, onClose }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
+  useEscToClose(onClose)
 
   const submit = async (e) => {
     e.preventDefault()
@@ -50,6 +52,9 @@ function Inner({ token, onDone, onClose }) {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Set a new password"
         className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg"
       >
         <div className="flex items-center gap-3 mb-4">

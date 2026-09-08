@@ -11,6 +11,7 @@ import {
   syncCanvas,
   disconnectCanvas,
 } from '../../lib/api.js'
+import { useEscToClose } from '../../lib/useEscToClose.js'
 
 // "2 minutes ago" style relative time.
 function ago(iso) {
@@ -45,6 +46,7 @@ function Inner({ onClose, onImported }) {
   const [busy, setBusy] = useState(false)
   const [msg, setMsg] = useState(null)
   const [status, setStatus] = useState({ connected: false, lastSync: null })
+  useEscToClose(onClose)
 
   useEffect(() => {
     canvasStatus().then(setStatus)
@@ -89,6 +91,9 @@ function Inner({ onClose, onImported }) {
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
+        role="dialog"
+        aria-modal="true"
+        aria-label="Import a calendar"
         className="crt retro-panel noise w-full max-w-md p-6 shadow-chunk-lg max-h-[90vh] overflow-y-auto"
       >
         <div className="flex items-start justify-between mb-5">

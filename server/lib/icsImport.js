@@ -60,6 +60,68 @@ function parseWhen(rawName, value, tz) {
   return { dueISO: new Date(Date.UTC(+y, +mo - 1, +d, +h, +min)).toISOString(), allDay: false }
 }
 
+const DAYCODE = { SU: 0, MO: 1, TU: 2, WE: 3, TH: 4, FR: 5, SA: 6 }
+
+function startOfWeekUTC(date) {
+  return Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), date.getUTCDate() - date.getUTCDay())
+}
+
+/**
+ * Expand a WEEKLY/DAILY RRULE into concrete occurrence ISO strings, starting
+ * from baseISO. Bounded by COUNT/UNTIL and a hard cap so a "forever" rule can't
+ * explode. Returns null for unsupported frequencies (caller keeps it single).
+ */
+export function expandRecurrence(baseISO, rrule, cap = 60) {
+  const parts = Object.fromEntries(
+    rrule.split(';').map((kv) => {
+      const [k, v] = kv.split('=')
+      return [(k || '').toUpperCase(), v || '']
+    }),
+  )
+  const freq = (parts.FREQ || '').toUpperCase()
+  if (freq !== 'WEEKLY' && freq !== 'DAILY') return null
+
+  const interval = Math.max(1, parseInt(parts.INTERVAL || '1', 10) || 1)
+  const count = parts.COUNT ? parseInt(parts.COUNT, 10) : null
+  const base = new Date(baseISO)
+  const hour = base.getUTCHours()
+  const min = base.getUTCMinutes()
+  const horizon = Date.UTC(base.getUTCFullYear() + 1, base.getUTCMonth(), base.getUTCDate())
+  let until = horizon
+  if (parts.UNTIL) {
+    const m = parts.UNTIL.match(/(\d{4})(\d{2})(\d{2})/)
+    if (m) until = Math.min(Date.UTC(+m[1], +m[2] - 1, +m[3], 23, 59), horizon)
+  }
+
+  const out = []
+  const push = (d) => {
+    out.push(new Date(Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate(), hour, min)).toISOString())
+  }
+  const limit = () => (count ? out.length >= count : false) || out.length >= cap
+
+  if (freq === 'DAILY') {
+    const d = new Date(base)
+    while (d.getTime() <= until && !limit()) {
+      push(d)
+      d.setUTCDate(d.getUTCDate() + interval)
+    }
+  } else {
+    const days = parts.BYDAY
+      ? parts.BYDAY.split(',')
+          .map((x) => DAYCODE[x.slice(-2).toUpperCase()])
+          .filter((x) => x != null)
+      : [base.getUTCDay()]
+    const baseWeek = startOfWeekUTC(base)
+    const d = new Date(base)
+    while (d.getTime() <= until && !limit()) {
+      const weeksSince = Math.round((startOfWeekUTC(d) - baseWeek) / (7 * 86400000))
+      if (weeksSince % interval === 0 && days.includes(d.getUTCDay())) push(d)
+      d.setUTCDate(d.getUTCDate() + 1)
+    }
+  }
+  return out
+}
+
 function classify(text, fallback) {
   const s = text.toLowerCase()
   if (/\bquiz\b/.test(s)) return 'quiz'
@@ -101,14 +163,27 @@ export function parseIcs(text, { tz = 'UTC', defaultType = 'other', courseName =
       const when = cur && (cur.start?.allDay ? cur.start : cur.end || cur.start)
       if (cur && cur.summary && when) {
         const { title, course } = splitCourse(cur.summary)
-        events.push({
+        const meta = {
           title: title.slice(0, 200) || 'Untitled',
           course: course || courseName || calendarName || 'Imported',
           type: classify(`${cur.summary} ${cur.description || ''}`, defaultType),
-          due: when.dueISO,
           allDay: cur.start.allDay,
-          externalUid: cur.uid || null,
-        })
+        }
+        // Recurring (weekly lecture/lab) → expand to one event per occurrence,
+        // each with a stable UID so re-syncs dedupe. Recurring meetings use the
+        // START time (they're events, not deadlines).
+        const occ = cur.rrule ? expandRecurrence(cur.start.dueISO, cur.rrule) : null
+        if (occ && occ.length) {
+          for (const dueISO of occ) {
+            events.push({
+              ...meta,
+              due: dueISO,
+              externalUid: cur.uid ? `${cur.uid}::${dueISO.slice(0, 10)}` : null,
+            })
+          }
+        } else {
+          events.push({ ...meta, due: when.dueISO, externalUid: cur.uid || null })
+        }
       }
       cur = null
       continue
@@ -126,6 +201,7 @@ export function parseIcs(text, { tz = 'UTC', defaultType = 'other', courseName =
     else if (base === 'UID') cur.uid = value.trim()
     else if (base === 'DTSTART') cur.start = parseWhen(name, value, tz)
     else if (base === 'DTEND') cur.end = parseWhen(name, value, tz)
+    else if (base === 'RRULE') cur.rrule = value.trim()
   }
   return { calendarName, events }
 }

@@ -9,7 +9,9 @@ import { motion } from 'framer-motion'
  *   mood — 'idle' | 'happy' | 'eating' | 'scanning' | 'done' | 'reading' | 'think'
  *   size — pixel width (height scales with the art's aspect ratio)
  */
-const FRAME = {
+export type Mood = 'idle' | 'happy' | 'eating' | 'scanning' | 'reading' | 'think' | 'done' | 'celebrate'
+
+const FRAME: Record<Mood, string> = {
   idle: '/steve/5.png', // neutral smile
   happy: '/steve/2.png', // waving hello
   eating: '/steve/7.png', // holding a pencil (working)
@@ -22,7 +24,7 @@ const FRAME = {
 
 const ASPECT = 352 / 334 // native frame height / width
 
-export default function Steve({ mood = 'idle', size = 220 }) {
+export default function Steve({ mood = 'idle', size = 220 }: { mood?: Mood; size?: number }) {
   const src = FRAME[mood] || FRAME.idle
   const bob = mood === 'idle' || mood === 'happy' || mood === 'done'
 

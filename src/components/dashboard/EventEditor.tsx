@@ -1,25 +1,34 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import { EVENT_TYPES, EDITABLE_TYPES } from '../../data/events.js'
+import RetroButton from '../RetroButton'
+import { EVENT_TYPES, EDITABLE_TYPES } from '../../data/events'
 import { useModalA11y } from '../../lib/useModalA11y'
+import type { Ref } from 'react'
+import type { EventItem, EventType } from '../../types'
 
 // Split an ISO string into <input type=date> and <input type=time> values,
 // reading the wall-clock (UTC) parts so times never shift by timezone.
-function isoToInputs(iso) {
+function isoToInputs(iso: string): { date: string; time: string } {
   const dt = new Date(iso)
-  const pad = (n) => String(n).padStart(2, '0')
+  const pad = (n: number) => String(n).padStart(2, '0')
   const date = `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`
   const time = `${pad(dt.getUTCHours())}:${pad(dt.getUTCMinutes())}`
   return { date, time }
+}
+
+interface EventEditorProps {
+  event: EventItem | null
+  onSave: (updated: EventItem) => void
+  onClose: () => void
+  onDelete: (id: string) => void
 }
 
 /**
  * EventEditor — retro modal for editing a single event.
  * Props: event (or null to close), onSave(updated), onClose, onDelete(id)
  */
-export default function EventEditor({ event, onSave, onClose, onDelete }) {
+export default function EventEditor({ event, onSave, onClose, onDelete }: EventEditorProps) {
   return (
     <AnimatePresence>
       {event && <Inner key={event.id} event={event} onSave={onSave} onClose={onClose} onDelete={onDelete} />}
@@ -27,11 +36,11 @@ export default function EventEditor({ event, onSave, onClose, onDelete }) {
   )
 }
 
-function Inner({ event, onSave, onClose, onDelete }) {
+function Inner({ event, onSave, onClose, onDelete }: { event: EventItem } & Omit<EventEditorProps, 'event'>) {
   const init = isoToInputs(event.due)
   const [title, setTitle] = useState(event.title)
-  const [course, setCourse] = useState(event.course)
-  const [type, setType] = useState(event.type)
+  const [course, setCourse] = useState(event.course || '')
+  const [type, setType] = useState<EventType>(event.type)
   const [label, setLabel] = useState(event.label || '')
   const [date, setDate] = useState(init.date)
   // Default a timed deadline to 11:59 PM unless the event already has a time.
@@ -44,7 +53,7 @@ function Inner({ event, onSave, onClose, onDelete }) {
     let hh = 23
     let mm = 59 // default 11:59 PM
     if (!allDay && time) {
-      ;[hh, mm] = time.split(':').map(Number)
+      [hh, mm] = time.split(':').map(Number)
     }
     onSave({
       ...event,
@@ -74,7 +83,7 @@ function Inner({ event, onSave, onClose, onDelete }) {
         exit={{ scale: 0.85, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
@@ -101,7 +110,7 @@ function Inner({ event, onSave, onClose, onDelete }) {
             </div>
             <div>
               <label className="font-pixel text-[10px] text-cyan block mb-1">TYPE</label>
-              <select className={field} value={type} onChange={(e) => setType(e.target.value)}>
+              <select className={field} value={type} onChange={(e) => setType(e.target.value as EventType)}>
                 {EDITABLE_TYPES.map((k) => (
                   <option key={k} value={k}>
                     {EVENT_TYPES[k].label}

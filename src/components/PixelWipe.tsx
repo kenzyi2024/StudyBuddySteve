@@ -9,7 +9,7 @@ const COLS = 12
 const ROWS = 8
 const PALETTE = ['#ff2e97', '#22e0ff', '#b8ff2e', '#ffb020', '#7b2ff7']
 
-export default function PixelWipe({ onFinished }) {
+export default function PixelWipe({ onFinished }: { onFinished?: () => void }) {
   const blocks = Array.from({ length: COLS * ROWS })
 
   return (

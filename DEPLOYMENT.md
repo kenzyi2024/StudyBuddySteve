@@ -93,6 +93,13 @@ want `"store":"mongo"`.
 > give the gateway's service account the `roles/run.invoker` role on it (the
 > gateway then calls it with an identity token).
 
+> **Cold starts:** Cloud Run scales to zero, so the first request after idle
+> waits ~30s while an instance boots. `deploy-gcloud.sh` sets `--min-instances 1`
+> to keep one warm; run it with `MIN_INSTANCES=0` to scale fully to zero
+> (cheaper, but cold starts return). To toggle without redeploying:
+> `gcloud run services update steve-gateway --region us-central1 --min-instances 1`
+> A warm instance bills a little even when idle — weigh cost vs. snappiness.
+
 ## 3. Frontend — Vercel
 
 1. Vercel → New Project → import the repo (auto-detects Vite via `vercel.json`).

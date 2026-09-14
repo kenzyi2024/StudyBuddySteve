@@ -15,40 +15,62 @@ import {
   Eraser,
   Coffee,
 } from 'lucide-react'
-import Steve from '../Steve.jsx'
-import RetroButton from '../RetroButton.jsx'
-import CalendarView from '../dashboard/CalendarView.jsx'
-import EventEditor from '../dashboard/EventEditor.jsx'
-import RemindersModal from './RemindersModal.jsx'
-import ImportModal from './ImportModal.jsx'
+import Steve from '../Steve'
+import RetroButton from '../RetroButton'
+import CalendarView from '../dashboard/CalendarView'
+import EventEditor from '../dashboard/EventEditor'
+import RemindersModal from './RemindersModal'
+import ImportModal from './ImportModal'
 import TaskRow from './TaskRow'
-import { courseColors } from '../../data/events.js'
+import { courseColors } from '../../data/events'
 import { daysUntil, countdownLabel } from '../../lib/schedule'
-import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl, getMyEvents } from '../../lib/api.js'
+import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl, getMyEvents } from '../../lib/api'
+import type { EventItem, User } from '../../types'
 
 const NOTIFIED_KEY = 'steve_notified'
 
-export default function SemesterHome({ user, initialEvents = [], onUploadMore, onOpenQuiz, onLogout }) {
-  const [events, setEvents] = useState(initialEvents)
-  const [view, setView] = useState('overview') // overview | calendar | tasks
-  const [editing, setEditing] = useState(null)
-  const [courseFilter, setCourseFilter] = useState(null) // null = all courses
+type View = 'overview' | 'calendar' | 'tasks'
+
+interface SemesterHomeProps {
+  user?: User | null
+  initialEvents?: EventItem[]
+  onUploadMore: () => void
+  onOpenQuiz: () => void
+  onLogout: () => void
+}
+
+interface PendingDelete {
+  event: EventItem
+  timer: ReturnType<typeof setTimeout>
+}
+
+export default function SemesterHome({
+  user,
+  initialEvents = [],
+  onUploadMore,
+  onOpenQuiz,
+  onLogout,
+}: SemesterHomeProps) {
+  const [events, setEvents] = useState<EventItem[]>(initialEvents)
+  const [view, setView] = useState<View>('overview') // overview | calendar | tasks
+  const [editing, setEditing] = useState<EventItem | null>(null)
+  const [courseFilter, setCourseFilter] = useState<string | null>(null) // null = all courses
   const [notify, setNotify] = useState(
     typeof Notification !== 'undefined' && Notification.permission === 'granted',
   )
   const [remindersOpen, setRemindersOpen] = useState(false)
   const [importOpen, setImportOpen] = useState(false)
-  const [undo, setUndo] = useState(null) // recently-deleted event (undoable)
-  const undoRef = useRef(null)
+  const [undo, setUndo] = useState<EventItem | null>(null) // recently-deleted event (undoable)
+  const undoRef = useRef<PendingDelete | null>(null)
 
   const refreshEvents = () => getMyEvents().then((r) => setEvents(r.events || [])).catch(() => {})
-  const notifiedRef = useRef(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
+  const notifiedRef = useRef<Set<string>>(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
 
   useEffect(() => setEvents(initialEvents), [initialEvents])
 
   // --- persistence helpers ---
-  const patch = (id, body) => patchEvent(id, body).catch(() => {})
-  const toggleDone = (id) =>
+  const patch = (id: string, body: Record<string, unknown>) => patchEvent(id, body).catch(() => {})
+  const toggleDone = (id: string) =>
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
@@ -57,7 +79,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
         return { ...e, done }
       }),
     )
-  const saveEvent = (updated) => {
+  const saveEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
     patch(updated.id, {
       title: updated.title,
@@ -71,7 +93,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
   }
   // Delete with a 5-second undo: remove from the UI immediately, but only tell
   // the server after the window closes (unless the student hits Undo).
-  const deleteEvent = (id) => {
+  const deleteEvent = (id: string) => {
     setEditing(null)
     const ev = events.find((e) => e.id === id)
     if (!ev) return
@@ -90,14 +112,15 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     setUndo(ev)
   }
   const undoDelete = () => {
-    if (!undoRef.current) return
-    clearTimeout(undoRef.current.timer)
-    setEvents((prev) => [...prev, undoRef.current.event])
+    const pending = undoRef.current
+    if (!pending) return
+    clearTimeout(pending.timer)
+    setEvents((prev) => [...prev, pending.event])
     undoRef.current = null
     setUndo(null)
   }
   // Bulk delete: removes a set of ids locally and on the server.
-  const deleteMany = (ids) => {
+  const deleteMany = (ids: string[]) => {
     const set = new Set(ids)
     setEvents((prev) => prev.filter((e) => !set.has(e.id)))
     ids.forEach((id) => apiDeleteEvent(id).catch(() => {}))
@@ -112,7 +135,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     if (ids.length && window.confirm(`Delete ALL ${ids.length} task(s) shown? This can't be undone.`))
       deleteMany(ids)
   }
-  const reschedule = (id, y, m, d) =>
+  const reschedule = (id: string, y: number, m: number, d: number) =>
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
@@ -129,8 +152,8 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     () => [...courseMap.entries()].map(([name, c]) => ({ name, color: c.name })),
     [courseMap],
   )
-  const courseColor = (name) => courseMap.get(name || 'Course')?.name || 'cyan'
-  const courseHex = (name) => courseMap.get(name || 'Course')?.hex || '#22e0ff'
+  const courseColor = (name?: string) => courseMap.get(name || 'Course')?.name || 'cyan'
+  const courseHex = (name?: string) => courseMap.get(name || 'Course')?.hex || '#22e0ff'
 
   // Events scoped to the active course filter (drives every view below).
   const scoped = useMemo(
@@ -154,13 +177,13 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     () =>
       scoped
         .filter((e) => !e.done && daysUntil(e.due) >= -3)
-        .sort((a, b) => new Date(a.due) - new Date(b.due))
+        .sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime())
         .slice(0, 12),
     [scoped],
   )
 
   const openTasks = useMemo(
-    () => scoped.filter((e) => !e.done).sort((a, b) => new Date(a.due) - new Date(b.due)),
+    () => scoped.filter((e) => !e.done).sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime()),
     [scoped],
   )
 
@@ -181,7 +204,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
     if (changed) localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notifiedRef.current]))
   }, [notify, events])
 
-  const TabBtn = ({ id, icon: Icon, label }) => {
+  const TabBtn = ({ id, icon: Icon, label }: { id: View; icon: typeof CalendarDays; label: string }) => {
     const active = view === id
     return (
       <button
@@ -195,7 +218,7 @@ export default function SemesterHome({ user, initialEvents = [], onUploadMore, o
   }
 
   // Render a task row (extracted to ./TaskRow) with the course-scoped colors.
-  const row = (e) => (
+  const row = (e: EventItem) => (
     <TaskRow
       key={e.id}
       e={e}

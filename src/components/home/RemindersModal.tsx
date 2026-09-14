@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X, BellRing, Smartphone, CalendarClock, Check, Download, ExternalLink, Copy, Mail, Clock } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import Steve from '../Steve.jsx'
+import RetroButton from '../RetroButton'
+import Steve from '../Steve'
 import {
   reminderStatus,
   getPushKey,
@@ -10,10 +10,20 @@ import {
   unsubscribePush,
   saveReminderPrefs,
   myCalendarIcsUrl,
-} from '../../lib/api.js'
+} from '../../lib/api'
 import { useModalA11y } from '../../lib/useModalA11y'
+import type { Ref } from 'react'
+import type { User } from '../../types'
 
-function urlB64ToUint8Array(base64) {
+type PushState = 'on' | 'off' | 'denied' | 'unsupported' | 'working'
+
+interface ServerState {
+  push?: boolean
+  sms?: boolean
+  email?: boolean
+}
+
+function urlB64ToUint8Array(base64: string): Uint8Array {
   const padding = '='.repeat((4 - (base64.length % 4)) % 4)
   const b64 = (base64 + padding).replace(/-/g, '+').replace(/_/g, '/')
   const raw = atob(b64)
@@ -27,7 +37,7 @@ function absoluteIcs() {
 }
 
 // Retro on/off switch.
-function Toggle({ on, disabled, onClick }) {
+function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
   return (
     <button
       onClick={onClick}
@@ -51,18 +61,24 @@ function Toggle({ on, disabled, onClick }) {
  *   2. Text messages (SMS) — set up your number + opt-in here
  *   3. Calendar app — one-tap Google, or subscribe/download for Apple/Outlook
  */
-export default function RemindersModal({ open, onClose, user }) {
+interface RemindersModalProps {
+  open: boolean
+  onClose: () => void
+  user?: User | null
+}
+
+export default function RemindersModal({ open, onClose, user }: RemindersModalProps) {
   return <AnimatePresence>{open && <Inner onClose={onClose} user={user} />}</AnimatePresence>
 }
 
-function Inner({ onClose, user }) {
-  const [server, setServer] = useState({ push: false, sms: false })
-  const [pushState, setPushState] = useState('off') // on | off | denied | unsupported | working
+function Inner({ onClose, user }: Omit<RemindersModalProps, 'open'>) {
+  const [server, setServer] = useState<ServerState>({ push: false, sms: false })
+  const [pushState, setPushState] = useState<PushState>('off') // on | off | denied | unsupported | working
   const [phone, setPhone] = useState(user?.phone || '')
   const [smsOn, setSmsOn] = useState(!!user?.smsEnabled)
   const [emailOn, setEmailOn] = useState(!!user?.emailReminders)
   const [lead, setLead] = useState(user?.reminderLead || 24)
-  const [msg, setMsg] = useState(null)
+  const [msg, setMsg] = useState<string | null>(null)
   const dialogRef = useModalA11y(onClose)
 
   useEffect(() => {
@@ -81,7 +97,7 @@ function Inner({ onClose, user }) {
     })()
   }, [])
 
-  const flash = (t) => {
+  const flash = (t: string) => {
     setMsg(t)
     setTimeout(() => setMsg(null), 3500)
   }
@@ -103,7 +119,7 @@ function Inner({ onClose, user }) {
           await navigator.serviceWorker.ready
           const sub = await reg.pushManager.subscribe({
             userVisibleOnly: true,
-            applicationServerKey: urlB64ToUint8Array(key),
+            applicationServerKey: urlB64ToUint8Array(key) as BufferSource,
           })
           await subscribePush(sub)
           setPushState('on')
@@ -142,7 +158,9 @@ function Inner({ onClose, user }) {
 
   // Persist all reminder prefs together (channels + lead time). `over` lets a
   // control pass its new value without waiting for state to settle.
-  const persist = async (over = {}) => {
+  const persist = async (
+    over: Partial<{ phone: string; smsEnabled: boolean; emailReminders: boolean; reminderLead: number }> = {},
+  ): Promise<boolean> => {
     try {
       await saveReminderPrefs({
         phone,
@@ -153,7 +171,7 @@ function Inner({ onClose, user }) {
       })
       return true
     } catch (e) {
-      flash(e.message || 'Could not save — check the phone format (+15551234567).')
+      flash((e as Error).message || 'Could not save — check the phone format (+15551234567).')
       return false
     }
   }
@@ -162,17 +180,17 @@ function Inner({ onClose, user }) {
     if (await persist()) flash(smsOn ? 'Text reminders saved!' : 'Text reminders turned off.')
   }
 
-  const chooseLead = async (v) => {
+  const chooseLead = async (v: number) => {
     setLead(v)
     if (await persist({ reminderLead: v })) flash('Reminder timing updated.')
   }
 
-  const toggleEmail = async (v) => {
+  const toggleEmail = async (v: boolean) => {
     setEmailOn(v)
     if (await persist({ emailReminders: v })) flash(v ? 'Email reminders on.' : 'Email reminders off.')
   }
 
-  const LEADS = [
+  const LEADS: [number, string][] = [
     [24, '1 day'],
     [48, '2 days'],
     [72, '3 days'],
@@ -204,10 +222,12 @@ function Inner({ onClose, user }) {
   const field =
     'w-full bg-void border-3 border-ink text-beige font-mono text-xl px-3 py-2 focus:outline-none focus:border-cyan'
 
-  const pushHint = {
-    denied: ' You blocked notifications — re-enable them in your browser settings.',
-    unsupported: ' This browser doesn’t support it (on iPhone: Share → Add to Home Screen first).',
-  }[pushState]
+  const pushHint = (
+    {
+      denied: ' You blocked notifications — re-enable them in your browser settings.',
+      unsupported: ' This browser doesn’t support it (on iPhone: Share → Add to Home Screen first).',
+    } as Record<string, string>
+  )[pushState]
 
   return (
     <motion.div
@@ -223,7 +243,7 @@ function Inner({ onClose, user }) {
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"

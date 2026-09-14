@@ -1,8 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X, Upload, Link2, GraduationCap, RefreshCw, Check } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import Steve from '../Steve.jsx'
+import RetroButton from '../RetroButton'
+import Steve from '../Steve'
 import {
   importIcsFile,
   importIcsUrl,
@@ -10,11 +10,12 @@ import {
   canvasStatus,
   syncCanvas,
   disconnectCanvas,
-} from '../../lib/api.js'
+} from '../../lib/api'
 import { useModalA11y } from '../../lib/useModalA11y'
+import type { Ref } from 'react'
 
 // "2 minutes ago" style relative time.
-function ago(iso) {
+function ago(iso: string | null): string {
   if (!iso) return 'never'
   const s = Math.max(0, (Date.now() - new Date(iso).getTime()) / 1000)
   if (s < 60) return 'just now'
@@ -35,24 +36,35 @@ function ago(iso) {
  *   • Connect a Canvas calendar feed (assignments + tasks)
  * Calls onImported() so the home can refresh.
  */
-export default function ImportModal({ open, onClose, onImported }) {
+interface ImportModalProps {
+  open: boolean
+  onClose: () => void
+  onImported?: () => void
+}
+
+interface CanvasState {
+  connected: boolean
+  lastSync: string | null
+}
+
+export default function ImportModal({ open, onClose, onImported }: ImportModalProps) {
   return <AnimatePresence>{open && <Inner onClose={onClose} onImported={onImported} />}</AnimatePresence>
 }
 
-function Inner({ onClose, onImported }) {
-  const fileRef = useRef(null)
+function Inner({ onClose, onImported }: Omit<ImportModalProps, 'open'>) {
+  const fileRef = useRef<HTMLInputElement>(null)
   const [url, setUrl] = useState('')
   const [canvas, setCanvas] = useState('')
   const [busy, setBusy] = useState(false)
-  const [msg, setMsg] = useState(null)
-  const [status, setStatus] = useState({ connected: false, lastSync: null })
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null)
+  const [status, setStatus] = useState<CanvasState>({ connected: false, lastSync: null })
   const dialogRef = useModalA11y(onClose)
 
   useEffect(() => {
     canvasStatus().then(setStatus)
   }, [])
 
-  const run = async (fn) => {
+  const run = async (fn: () => Promise<any>) => {
     setBusy(true)
     setMsg(null)
     try {
@@ -68,7 +80,7 @@ function Inner({ onClose, onImported }) {
       }
       onImported?.()
     } catch (e) {
-      setMsg({ ok: false, text: e.message || 'Import failed. Check the file or URL.' })
+      setMsg({ ok: false, text: (e as Error).message || 'Import failed. Check the file or URL.' })
     } finally {
       setBusy(false)
     }
@@ -91,7 +103,7 @@ function Inner({ onClose, onImported }) {
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"
@@ -136,7 +148,7 @@ function Inner({ onClose, onImported }) {
                     setStatus({ connected: false, lastSync: null })
                     setMsg({ ok: true, text: 'Canvas disconnected. Auto-sync is off.' })
                   } catch (e) {
-                    setMsg({ ok: false, text: e.message || 'Could not disconnect.' })
+                    setMsg({ ok: false, text: (e as Error).message || 'Could not disconnect.' })
                   } finally {
                     setBusy(false)
                   }

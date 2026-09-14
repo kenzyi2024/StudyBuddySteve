@@ -1,15 +1,23 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import Steve from './Steve.jsx'
-import RetroButton from './RetroButton.jsx'
-import { resetPassword } from '../lib/api.js'
+import Steve from './Steve'
+import RetroButton from './RetroButton'
+import { resetPassword } from '../lib/api'
 import { useModalA11y } from '../lib/useModalA11y'
+import type { Ref } from 'react'
+import type { User } from '../types'
+
+interface ResetPasswordModalProps {
+  token: string | null
+  onDone: (user: User) => void
+  onClose: () => void
+}
 
 /**
  * ResetPasswordModal — shown when the app opens with a ?reset=<token> link.
  * Props: token (string | null), onDone(user), onClose
  */
-export default function ResetPasswordModal({ token, onDone, onClose }) {
+export default function ResetPasswordModal({ token, onDone, onClose }: ResetPasswordModalProps) {
   return (
     <AnimatePresence>
       {token && <Inner token={token} onDone={onDone} onClose={onClose} />}
@@ -17,13 +25,13 @@ export default function ResetPasswordModal({ token, onDone, onClose }) {
   )
 }
 
-function Inner({ token, onDone, onClose }) {
+function Inner({ token, onDone, onClose }: { token: string; onDone: (user: User) => void; onClose: () => void }) {
   const [password, setPassword] = useState('')
   const [error, setError] = useState('')
   const [busy, setBusy] = useState(false)
   const dialogRef = useModalA11y(onClose)
 
-  const submit = async (e) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setBusy(true)
@@ -31,7 +39,7 @@ function Inner({ token, onDone, onClose }) {
       const { user } = await resetPassword(token, password)
       onDone(user)
     } catch (err) {
-      setError(err.message || 'This reset link is invalid or expired.')
+      setError((err as Error).message || 'This reset link is invalid or expired.')
     } finally {
       setBusy(false)
     }
@@ -52,7 +60,7 @@ function Inner({ token, onDone, onClose }) {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"

@@ -1,19 +1,26 @@
 import { useMemo, useState } from 'react'
 import { motion } from 'framer-motion'
 import { CalendarDays, ListChecks, ArrowLeft, CheckCheck } from 'lucide-react'
-import Steve from '../Steve.jsx'
-import RetroButton from '../RetroButton.jsx'
-import CalendarView from './CalendarView.jsx'
-import ListView from './ListView.jsx'
-import EventEditor from './EventEditor.jsx'
-import SyncBar from './SyncBar.jsx'
+import Steve from '../Steve'
+import RetroButton from '../RetroButton'
+import CalendarView from './CalendarView'
+import ListView from './ListView'
+import EventEditor from './EventEditor'
+import SyncBar from './SyncBar'
 import {
   patchEvent,
   deleteEvent as apiDeleteEvent,
   approveCourse,
   commitCourse,
   calendarIcsUrl,
-} from '../../lib/api.js'
+} from '../../lib/api'
+import type { EventItem } from '../../types'
+
+interface DashboardProps {
+  courseId?: string | null
+  initialEvents?: EventItem[] | null
+  onBack: () => void
+}
 
 /**
  * Dashboard — the review screen. Users toggle between a calendar and list
@@ -24,11 +31,11 @@ import {
  *   initialEvents — parsed events (falls back to seed data when none provided)
  *   onBack        — return to the upload screen
  */
-export default function Dashboard({ courseId = null, initialEvents, onBack }) {
+export default function Dashboard({ courseId = null, initialEvents, onBack }: DashboardProps) {
   // Show the REAL parsed events (even if empty). Never fabricate sample data.
-  const [events, setEvents] = useState(() => initialEvents ?? [])
-  const [tab, setTab] = useState('calendar') // 'calendar' | 'list'
-  const [editing, setEditing] = useState(null)
+  const [events, setEvents] = useState<EventItem[]>(() => initialEvents ?? [])
+  const [tab, setTab] = useState<'calendar' | 'list'>('calendar') // 'calendar' | 'list'
+  const [editing, setEditing] = useState<EventItem | null>(null)
   const [committing, setCommitting] = useState(false)
 
   const live = !!courseId // when false, mutations stay local-only
@@ -37,12 +44,12 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
 
   // Persist a patch to the gateway when live; ignore failures (UI already
   // updated optimistically, and demo mode has no backend).
-  const persist = (id, patch) => {
+  const persist = (id: string, patch: Record<string, unknown>) => {
     if (live) patchEvent(id, patch).catch(() => {})
   }
 
   // --- mutations (optimistic; synced when live) ---
-  const saveEvent = (updated) => {
+  const saveEvent = (updated: EventItem) => {
     setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
     persist(updated.id, {
       title: updated.title,
@@ -53,12 +60,12 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
     })
     setEditing(null)
   }
-  const deleteEvent = (id) => {
+  const deleteEvent = (id: string) => {
     setEvents((prev) => prev.filter((e) => e.id !== id))
     if (live) apiDeleteEvent(id).catch(() => {})
     setEditing(null)
   }
-  const toggleApprove = (id) =>
+  const toggleApprove = (id: string) =>
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
@@ -70,11 +77,11 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
 
   const approveAll = () => {
     setEvents((prev) => prev.map((e) => ({ ...e, approved: true })))
-    if (live) approveCourse(courseId).catch(() => {})
+    if (live && courseId) approveCourse(courseId).catch(() => {})
   }
 
   // drag-to-reschedule: keep the wall-clock time, change the day
-  const reschedule = (id, y, m, d) =>
+  const reschedule = (id: string, y: number, m: number, d: number) =>
     setEvents((prev) =>
       prev.map((e) => {
         if (e.id !== id) return e
@@ -87,7 +94,7 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
       }),
     )
 
-  const TabButton = ({ id, icon: Icon, label }) => {
+  const TabButton = ({ id, icon: Icon, label }: { id: 'calendar' | 'list'; icon: typeof CalendarDays; label: string }) => {
     const active = tab === id
     return (
       <button
@@ -156,7 +163,7 @@ export default function Dashboard({ courseId = null, initialEvents, onBack }) {
           courseId={courseId}
           approvedCount={approvedCount}
           totalCount={events.length}
-          icsUrl={courseId ? calendarIcsUrl(courseId) : null}
+          icsUrl={courseId ? calendarIcsUrl(courseId) : undefined}
         />
 
         {/* approve gate — nothing reaches the calendar until the student

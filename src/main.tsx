@@ -1,6 +1,6 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-import App from './App.jsx'
+import App from './App'
 import './index.css'
 
 // Optional error tracking — lazy-loaded only when a DSN is configured, so it
@@ -11,7 +11,7 @@ if (import.meta.env?.VITE_SENTRY_DSN) {
     .catch(() => {})
 }
 
-ReactDOM.createRoot(document.getElementById('root')).render(
+ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
     <App />
   </React.StrictMode>,

@@ -1,38 +1,54 @@
 import { useCallback, useRef, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { UploadCloud, FileText, FileImage, FileType2, X } from 'lucide-react'
-import Steve from './Steve.jsx'
-import RetroButton from './RetroButton.jsx'
-import { uploadSyllabus, pollJob } from '../lib/api.js'
+import Steve from './Steve'
+import type { Mood } from './Steve'
+import RetroButton from './RetroButton'
+import { uploadSyllabus, pollJob } from '../lib/api'
+import type { EventItem } from '../types'
 
 const ACCEPTED = ['.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg']
+
+interface Phase {
+  key: string
+  label: string
+  mood: Mood
+  color: string
+}
 
 // Processing phases. In live mode these are driven by the backend job status
 // ('eating' | 'scanning' | 'done'); in demo mode (backend offline) they play
 // on a timer so the frontend still shows Steve's whole routine.
-const PHASES = [
+const PHASES: Phase[] = [
   { key: 'eating', label: 'CHOMPING SYLLABUS…', mood: 'eating', color: 'magenta' },
   { key: 'scanning', label: 'LASER-SCANNING DATES…', mood: 'scanning', color: 'cyan' },
   { key: 'done', label: 'DIGESTED! DATES FOUND.', mood: 'done', color: 'lime' },
 ]
-const PHASE_INDEX = { eating: 0, scanning: 1, done: 2, error: 2 }
+const PHASE_INDEX: Record<string, number> = { eating: 0, scanning: 1, done: 2, error: 2 }
 
-function iconFor(name) {
+function iconFor(name: string) {
   const n = name.toLowerCase()
   if (n.endsWith('.pdf')) return FileText
   if (n.endsWith('.png') || n.endsWith('.jpg') || n.endsWith('.jpeg')) return FileImage
   return FileType2
 }
 
-export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
-  const inputRef = useRef(null)
+interface UploadZoneProps {
+  onComplete?: (result: { courseId: string; events: EventItem[] }) => void
+  authed?: boolean
+  onNeedAuth?: () => void
+}
+
+export default function UploadZone({ onComplete, authed = false, onNeedAuth }: UploadZoneProps) {
+  const inputRef = useRef<HTMLInputElement>(null)
   const [dragging, setDragging] = useState(false)
-  const [files, setFiles] = useState([])
+  const [files, setFiles] = useState<File[]>([])
   const [phaseIndex, setPhaseIndex] = useState(-1) // -1 = idle
-  const [error, setError] = useState(null)
+  const [error, setError] = useState<string | null>(null)
   const processing = phaseIndex >= 0
 
-  const addFiles = useCallback((list) => {
+  const addFiles = useCallback((list: FileList | null) => {
+    if (!list) return
     const incoming = Array.from(list).filter((f) =>
       ACCEPTED.some((ext) => f.name.toLowerCase().endsWith(ext)),
     )
@@ -40,7 +56,7 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
   }, [])
 
   const onDrop = useCallback(
-    (e) => {
+    (e: React.DragEvent) => {
       e.preventDefault()
       setDragging(false)
       addFiles(e.dataTransfer.files)
@@ -75,7 +91,8 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }) {
       const events = job.events || []
       // Real result — even if empty. Hand it up; the dashboard shows the truth.
       setTimeout(() => onComplete?.({ courseId: job.jobId, events }), 700)
-    } catch (err) {
+    } catch (e) {
+      const err = e as Error & { status?: number }
       setPhaseIndex(-1)
       if (err?.status === 401) {
         onNeedAuth?.()

@@ -1,55 +1,75 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { ChevronLeft, ChevronRight, X } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import TypeBadge from './TypeBadge.jsx'
-import { MONTHS, WEEKDAYS, monthGrid, sameDay, typeMeta, fmtTime, courseColors } from '../../data/events.js'
-import { useEscToClose } from '../../lib/useEscToClose.js'
+import RetroButton from '../RetroButton'
+import TypeBadge from './TypeBadge'
+import { MONTHS, WEEKDAYS, monthGrid, sameDay, typeMeta, fmtTime, courseColors } from '../../data/events'
+import { useEscToClose } from '../../lib/useEscToClose'
+import type { EventItem } from '../../types'
+
+declare global {
+  interface Window {
+    __steveDrag?: string | null
+  }
+}
+
+type Mode = 'year' | 'month' | 'week' | 'day'
+interface DayRef {
+  y: number
+  m: number
+  d: number
+}
+
+interface CalendarViewProps {
+  events: EventItem[]
+  onEdit: (e: EventItem) => void
+  onReschedule: (id: string, y: number, m: number, d: number) => void
+}
 
 /**
  * CalendarView — chunky retro calendar with Year / Month / Week / Day views.
  * Click any day to drill into everything scheduled for it. Month & Week support
  * drag-to-reschedule; click a chip to edit.
  */
-export default function CalendarView({ events, onEdit, onReschedule }) {
+export default function CalendarView({ events, onEdit, onReschedule }: CalendarViewProps) {
   // Anchor the calendar on the earliest event (or today) using UTC wall-clock.
   const firstDue = events.length
-    ? new Date(Math.min(...events.map((e) => new Date(e.due))))
+    ? new Date(Math.min(...events.map((e) => new Date(e.due).getTime())))
     : new Date()
   const [cursor, setCursor] = useState(
     () => new Date(Date.UTC(firstDue.getUTCFullYear(), firstDue.getUTCMonth(), firstDue.getUTCDate())),
   )
-  const [mode, setMode] = useState('month') // year | month | week | day
-  const [dropTarget, setDropTarget] = useState(null)
-  const [peek, setPeek] = useState(null) // {y,m,d} day-detail popover
+  const [mode, setMode] = useState<Mode>('month') // year | month | week | day
+  const [dropTarget, setDropTarget] = useState<string | null>(null)
+  const [peek, setPeek] = useState<DayRef | null>(null) // {y,m,d} day-detail popover
   useEscToClose(peek ? () => setPeek(null) : undefined)
 
   // Per-course colors (chips are colored by course; type still shown on badges).
   const cColors = courseColors(events)
-  const chipColor = (e) => cColors.get(e.course || 'Course')?.hex || typeMeta(e.type).hex
+  const chipColor = (e: EventItem) => cColors.get(e.course || 'Course')?.hex || typeMeta(e.type).hex
   const courseList = [...cColors.entries()] // [ [name, {name,hex}], ... ]
 
   const cy = cursor.getUTCFullYear()
   const cm = cursor.getUTCMonth()
   const cd = cursor.getUTCDate()
 
-  const dayEvents = (y, m, d) =>
+  const dayEvents = (y: number, m: number, d: number) =>
     events
       .filter((e) => sameDay(e.due, y, m, d))
-      .sort((a, b) => new Date(a.due) - new Date(b.due))
+      .sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime())
 
-  const isToday = (y, m, d) => {
+  const isToday = (y: number, m: number, d: number) => {
     const n = new Date()
     return n.getFullYear() === y && n.getMonth() === m && n.getDate() === d
   }
 
-  const goToDay = (y, m, d) => {
+  const goToDay = (y: number, m: number, d: number) => {
     setCursor(new Date(Date.UTC(y, m, d)))
     setMode('day')
   }
 
   // prev/next depends on the mode's period length.
-  const step = (dir) => {
+  const step = (dir: number) => {
     const c = new Date(cursor)
     if (mode === 'year') c.setUTCFullYear(cy + dir)
     else if (mode === 'month') c.setUTCMonth(cm + dir)
@@ -58,14 +78,14 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
     setCursor(c)
   }
 
-  const handleDrop = (y, m, d) => {
+  const handleDrop = (y: number, m: number, d: number) => {
     setDropTarget(null)
     const id = window.__steveDrag
     if (id) onReschedule(id, y, m, d)
   }
 
   // A draggable, clickable event chip — colored by course.
-  const Chip = ({ e, compact }) => (
+  const Chip = ({ e, compact }: { e: EventItem; compact?: boolean }) => (
     <motion.button
       layout
       draggable
@@ -98,7 +118,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
     day: `${WEEKDAYS[new Date(Date.UTC(cy, cm, cd)).getUTCDay()]}, ${MONTHS[cm]} ${cd}`,
   }[mode]
 
-  const ModeBtn = ({ id, label }) => (
+  const ModeBtn = ({ id, label }: { id: Mode; label: string }) => (
     <button
       onClick={() => setMode(id)}
       className={`px-3 py-1.5 border-3 border-ink font-pixel text-[10px] uppercase transition-colors
@@ -384,7 +404,7 @@ export default function CalendarView({ events, onEdit, onReschedule }) {
 }
 
 // Sunday-anchored 7 dates for the week containing (y,m,d), in UTC wall-clock.
-function weekDates(y, m, d) {
+function weekDates(y: number, m: number, d: number): DayRef[] {
   const base = new Date(Date.UTC(y, m, d))
   const start = new Date(base)
   start.setUTCDate(base.getUTCDate() - base.getUTCDay())
@@ -396,10 +416,10 @@ function weekDates(y, m, d) {
 }
 
 // Tiny month grid with dots on days that have events (for the Year view).
-function MiniMonth({ y, m, events }) {
+function MiniMonth({ y, m, events }: { y: number; m: number; events: EventItem[] }) {
   const daysInMonth = new Date(Date.UTC(y, m + 1, 0)).getUTCDate()
   const firstDow = new Date(Date.UTC(y, m, 1)).getUTCDay()
-  const hasEvents = (d) =>
+  const hasEvents = (d: number) =>
     events.some((e) => {
       const dt = new Date(e.due)
       return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d

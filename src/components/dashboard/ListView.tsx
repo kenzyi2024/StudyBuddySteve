@@ -1,13 +1,19 @@
 import { motion, AnimatePresence } from 'framer-motion'
 import { Pencil, Check, AlertCircle, Clock } from 'lucide-react'
-import TypeBadge from './TypeBadge.jsx'
-import { fmtTime, fmtDateLong, isoDateKey } from '../../data/events.js'
+import TypeBadge from './TypeBadge'
+import { fmtTime, fmtDateLong, isoDateKey } from '../../data/events'
+import type { EventItem } from '../../types'
+
+interface DayGroup {
+  label: string
+  items: EventItem[]
+}
 
 // Group events by day and sort chronologically. Events with an invalid/missing
 // due date are bucketed under "Undated" instead of crashing the view.
-function groupByDay(events) {
-  const map = new Map()
-  const valid = (iso) => iso && !Number.isNaN(new Date(iso).getTime())
+function groupByDay(events: EventItem[]): DayGroup[] {
+  const map = new Map<string, DayGroup>()
+  const valid = (iso?: string): boolean => !!iso && !Number.isNaN(new Date(iso).getTime())
   const sorted = [...events].sort((a, b) => {
     const ta = valid(a.due) ? new Date(a.due).getTime() : Infinity
     const tb = valid(b.due) ? new Date(b.due).getTime() : Infinity
@@ -17,16 +23,22 @@ function groupByDay(events) {
     const key = valid(e.due) ? isoDateKey(e.due) : 'undated'
     const label = valid(e.due) ? fmtDateLong(e.due) : 'Undated'
     if (!map.has(key)) map.set(key, { label, items: [] })
-    map.get(key).items.push(e)
+    map.get(key)!.items.push(e)
   }
   return [...map.values()]
+}
+
+interface ListViewProps {
+  events: EventItem[]
+  onEdit: (e: EventItem) => void
+  onToggleApprove: (id: string) => void
 }
 
 /**
  * ListView — grouped, chronological list of extracted events.
  * Each row can be approved, edited, and shows a low-confidence flag.
  */
-export default function ListView({ events, onEdit, onToggleApprove }) {
+export default function ListView({ events, onEdit, onToggleApprove }: ListViewProps) {
   const groups = groupByDay(events)
 
   if (!events.length) {
@@ -53,7 +65,8 @@ export default function ListView({ events, onEdit, onToggleApprove }) {
           <div className="space-y-2">
             <AnimatePresence initial={false}>
               {group.items.map((e) => {
-                const lowConf = e.confidence < 0.7
+                const conf = e.confidence ?? 1
+                const lowConf = conf < 0.7
                 return (
                   <motion.div
                     key={e.id}
@@ -81,7 +94,7 @@ export default function ListView({ events, onEdit, onToggleApprove }) {
                         {lowConf && (
                           <span
                             className="inline-flex items-center gap-1 text-amber font-mono text-base"
-                            title={`Low confidence (${Math.round(e.confidence * 100)}%) — double-check this one`}
+                            title={`Low confidence (${Math.round(conf * 100)}%) — double-check this one`}
                           >
                             <AlertCircle size={14} /> check me
                           </span>

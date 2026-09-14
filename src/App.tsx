@@ -1,16 +1,19 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { Calendar, ScanLine, Sparkles, Github, LogOut } from 'lucide-react'
-import Steve from './components/Steve.jsx'
-import RetroButton from './components/RetroButton.jsx'
-import UploadZone from './components/UploadZone.jsx'
-import PixelWipe from './components/PixelWipe.jsx'
-import Dashboard from './components/dashboard/Dashboard.jsx'
-import SemesterHome from './components/home/SemesterHome.jsx'
-import AuthModal from './components/AuthModal.jsx'
-import ResetPasswordModal from './components/ResetPasswordModal.jsx'
-import StudyQuiz from './components/home/StudyQuiz.jsx'
-import { me, logout, getMyEvents, verifyEmail, resendVerification } from './lib/api.js'
+import Steve from './components/Steve'
+import RetroButton from './components/RetroButton'
+import UploadZone from './components/UploadZone'
+import PixelWipe from './components/PixelWipe'
+import Dashboard from './components/dashboard/Dashboard'
+import SemesterHome from './components/home/SemesterHome'
+import AuthModal from './components/AuthModal'
+import ResetPasswordModal from './components/ResetPasswordModal'
+import StudyQuiz from './components/home/StudyQuiz'
+import { me, logout, getMyEvents, verifyEmail, resendVerification } from './lib/api'
+import type { EventItem, User } from './types'
+
+type Screen = 'upload' | 'dashboard' | 'home'
 
 const FEATURES = [
   {
@@ -35,14 +38,17 @@ const FEATURES = [
 
 export default function App() {
   const [wipe, setWipe] = useState(false)
-  const [screen, setScreen] = useState('upload') // 'upload' | 'dashboard' | 'home'
-  const [parsed, setParsed] = useState({ courseId: null, events: null })
-  const [user, setUser] = useState(null)
+  const [screen, setScreen] = useState<Screen>('upload') // 'upload' | 'dashboard' | 'home'
+  const [parsed, setParsed] = useState<{ courseId: string | null; events: EventItem[] | null }>({
+    courseId: null,
+    events: null,
+  })
+  const [user, setUser] = useState<User | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
-  const [homeEvents, setHomeEvents] = useState([])
+  const [homeEvents, setHomeEvents] = useState<EventItem[]>([])
   const [quizOpen, setQuizOpen] = useState(false)
-  const [resetToken, setResetToken] = useState(null)
-  const [banner, setBanner] = useState(null) // transient top banner
+  const [resetToken, setResetToken] = useState<string | null>(null)
+  const [banner, setBanner] = useState<string | null>(null) // transient top banner
 
   // Handle ?verify / ?reset links, then restore session.
   useEffect(() => {
@@ -87,12 +93,12 @@ export default function App() {
     }
   }
 
-  const transitionTo = (next) => {
+  const transitionTo = (next: Screen) => {
     setWipe(true)
     window.setTimeout(() => setScreen(next), 520)
   }
 
-  const handleParsed = (result) => {
+  const handleParsed = (result: { courseId: string; events: EventItem[] }) => {
     setParsed(result || { courseId: null, events: null })
     transitionTo('dashboard')
   }
@@ -103,7 +109,7 @@ export default function App() {
     transitionTo('home')
   }
 
-  const onAuthed = async (u) => {
+  const onAuthed = async (u: User) => {
     setUser(u)
     setAuthOpen(false)
     const ev = await loadHomeEvents()

@@ -1,23 +1,33 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import Steve from './Steve.jsx'
-import RetroButton from './RetroButton.jsx'
-import { login, register, forgotPassword } from '../lib/api.js'
+import Steve from './Steve'
+import RetroButton from './RetroButton'
+import { login, register, forgotPassword } from '../lib/api'
 import { useModalA11y } from '../lib/useModalA11y'
+import type { Ref } from 'react'
+import type { User } from '../types'
+
+type Mode = 'login' | 'register' | 'forgot'
+
+interface AuthModalProps {
+  open: boolean
+  onClose: () => void
+  onAuthed: (user: User) => void
+}
 
 /**
  * AuthModal — retro login / register dialog.
  * Props: open (bool), onClose, onAuthed(user)
  */
-export default function AuthModal({ open, onClose, onAuthed }) {
+export default function AuthModal({ open, onClose, onAuthed }: AuthModalProps) {
   return (
     <AnimatePresence>{open && <Inner onClose={onClose} onAuthed={onAuthed} />}</AnimatePresence>
   )
 }
 
-function Inner({ onClose, onAuthed }) {
-  const [mode, setMode] = useState('login') // 'login' | 'register' | 'forgot'
+function Inner({ onClose, onAuthed }: Omit<AuthModalProps, 'open'>) {
+  const [mode, setMode] = useState<Mode>('login') // 'login' | 'register' | 'forgot'
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
@@ -26,7 +36,7 @@ function Inner({ onClose, onAuthed }) {
   const [busy, setBusy] = useState(false)
   const dialogRef = useModalA11y(onClose)
 
-  const submit = async (e) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault()
     setError('')
     setNotice('')
@@ -42,7 +52,8 @@ function Inner({ onClose, onAuthed }) {
           ? await login({ email, password })
           : await register({ email, password, name })
       onAuthed(user)
-    } catch (err) {
+    } catch (e) {
+      const err = e as Error & { status?: number }
       // Network failure (backend offline) vs. a real auth error.
       const msg =
         err.status == null
@@ -71,7 +82,7 @@ function Inner({ onClose, onAuthed }) {
         exit={{ scale: 0.85, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 320, damping: 24 }}
         onClick={(e) => e.stopPropagation()}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"

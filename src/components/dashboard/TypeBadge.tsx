@@ -7,13 +7,30 @@ import {
   Coffee,
   Star,
 } from 'lucide-react'
-import { typeMeta } from '../../data/events.js'
+import { typeMeta } from '../../data/events'
+import type { EventType } from '../../types'
 
-const ICONS = { BookOpen, PencilLine, HelpCircle, AlertTriangle, FolderGit2, Coffee, Star }
+const ICONS: Record<string, typeof Star> = {
+  BookOpen,
+  PencilLine,
+  HelpCircle,
+  AlertTriangle,
+  FolderGit2,
+  Coffee,
+  Star,
+}
 
 /** Small chunky pill showing an event's type with its retro color + icon.
  *  For the "other" type, a custom `label` (if provided) replaces "Other". */
-export default function TypeBadge({ type, label, size = 'md' }) {
+export default function TypeBadge({
+  type,
+  label,
+  size = 'md',
+}: {
+  type: EventType
+  label?: string
+  size?: 'sm' | 'md'
+}) {
   const meta = typeMeta(type)
   const Icon = ICONS[meta.icon] || Star
   const pad = size === 'sm' ? 'px-2 py-1 text-[9px]' : 'px-2.5 py-1.5 text-[10px]'

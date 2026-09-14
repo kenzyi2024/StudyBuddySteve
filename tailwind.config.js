@@ -1,6 +1,6 @@
 /** @type {import('tailwindcss').Config} */
 export default {
-  content: ['./index.html', './src/**/*.{js,jsx}'],
+  content: ['./index.html', './src/**/*.{js,jsx,ts,tsx}'],
   // Colors are chosen dynamically (bg-${color}, text-${color}, shadow-chunk-${color}),
   // so Tailwind's scanner can't see them at build time. Safelist them explicitly.
   safelist: [

@@ -1,9 +1,17 @@
 // Shared event model, type metadata, seed data, and date helpers used across
 // the review dashboard (calendar + list views).
+import type { EventItem, EventType } from '../types'
+
+export interface TypeMeta {
+  label: string
+  color: string
+  hex: string
+  icon: string
+}
 
 // Retro color + icon-name per event type. `icon` maps to a lucide-react name
 // resolved in the components.
-export const EVENT_TYPES = {
+export const EVENT_TYPES: Record<EventType, TypeMeta> = {
   reading: { label: 'Reading', color: 'cyan', hex: '#22e0ff', icon: 'BookOpen' },
   homework: { label: 'Homework', color: 'lime', hex: '#b8ff2e', icon: 'PencilLine' },
   quiz: { label: 'Quiz', color: 'amber', hex: '#ffb020', icon: 'HelpCircle' },
@@ -15,13 +23,18 @@ export const EVENT_TYPES = {
   assignment: { label: 'Homework', color: 'lime', hex: '#b8ff2e', icon: 'PencilLine' },
 }
 
-export function typeMeta(type) {
-  return EVENT_TYPES[type] || EVENT_TYPES.other
+export function typeMeta(type: EventType | string): TypeMeta {
+  return EVENT_TYPES[type as EventType] || EVENT_TYPES.other
 }
 
 // Shared palette for per-course color-coding (tailwind name + hex, so both the
 // tailwind-class UIs and inline-style chips can stay consistent).
-export const COURSE_PALETTE = [
+export interface PaletteEntry {
+  name: string
+  hex: string
+}
+
+export const COURSE_PALETTE: PaletteEntry[] = [
   { name: 'cyan', hex: '#22e0ff' },
   { name: 'magenta', hex: '#ff2e97' },
   { name: 'lime', hex: '#b8ff2e' },
@@ -31,8 +44,8 @@ export const COURSE_PALETTE = [
 ]
 
 // Map each course name to a stable palette entry (order of first appearance).
-export function courseColors(events) {
-  const map = new Map()
+export function courseColors(events: EventItem[]): Map<string, PaletteEntry> {
+  const map = new Map<string, PaletteEntry>()
   for (const e of events) {
     const c = e.course || 'Course'
     if (!map.has(c)) map.set(c, COURSE_PALETTE[map.size % COURSE_PALETTE.length])
@@ -41,16 +54,25 @@ export function courseColors(events) {
 }
 
 // Types offered in the editor dropdown (excludes the legacy alias).
-export const EDITABLE_TYPES = ['reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other']
+export const EDITABLE_TYPES: EventType[] = ['reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other']
 
 let _id = 0
-const uid = () => `evt_${Date.now()}_${_id++}`
+const uid = (): string => `evt_${Date.now()}_${_id++}`
 
 // Seed events approximate what Steve's parser would return for a couple of
 // courses. `confidence` drives the "double-check me" flag in the UI.
-export function seedEvents() {
+export function seedEvents(): EventItem[] {
   const y = 2026
-  const mk = (course, title, type, month, day, hh, mm, confidence) => ({
+  const mk = (
+    course: string,
+    title: string,
+    type: EventType,
+    month: number,
+    day: number,
+    hh: number | null,
+    mm: number | null,
+    confidence: number,
+  ): EventItem => ({
     id: uid(),
     course,
     title,
@@ -92,16 +114,16 @@ export const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
 // and read it back with getUTC* so it never shifts. Use these helpers + the
 // makeDue() builder everywhere; never new Date(y,m,d,...) for due values.
 
-export function makeDue(y, m, d, hh = 0, mm = 0) {
+export function makeDue(y: number, m: number, d: number, hh = 0, mm = 0): string {
   return new Date(Date.UTC(y, m, d, hh, mm)).toISOString()
 }
 
-export function sameDay(iso, y, m, d) {
+export function sameDay(iso: string, y: number, m: number, d: number): boolean {
   const dt = new Date(iso)
   return dt.getUTCFullYear() === y && dt.getUTCMonth() === m && dt.getUTCDate() === d
 }
 
-export function fmtTime(iso, allDay) {
+export function fmtTime(iso: string, allDay?: boolean): string {
   if (allDay) return 'All day'
   const dt = new Date(iso)
   let h = dt.getUTCHours()
@@ -111,23 +133,30 @@ export function fmtTime(iso, allDay) {
   return `${h}:${m} ${ap}`
 }
 
-export function fmtDateLong(iso) {
+export function fmtDateLong(iso: string): string {
   const dt = new Date(iso)
   return `${WEEKDAYS[dt.getUTCDay()]} · ${MONTHS[dt.getUTCMonth()]} ${dt.getUTCDate()}`
 }
 
-export function isoDateKey(iso) {
+export function isoDateKey(iso: string): string {
   const dt = new Date(iso)
   return `${dt.getUTCFullYear()}-${dt.getUTCMonth()}-${dt.getUTCDate()}`
 }
 
+export interface GridCell {
+  d: number
+  m: number
+  y: number
+  inMonth: boolean
+}
+
 // Build a 6-row month grid (array of {day, inMonth, y, m, d}) for a given month.
-export function monthGrid(year, month) {
+export function monthGrid(year: number, month: number): GridCell[] {
   const first = new Date(year, month, 1)
   const startDow = first.getDay()
   const daysInMonth = new Date(year, month + 1, 0).getDate()
   const daysInPrev = new Date(year, month, 0).getDate()
-  const cells = []
+  const cells: GridCell[] = []
   // leading days from previous month
   for (let i = startDow - 1; i >= 0; i--) {
     cells.push({ d: daysInPrev - i, m: month - 1, y: month === 0 ? year - 1 : year, inMonth: false })

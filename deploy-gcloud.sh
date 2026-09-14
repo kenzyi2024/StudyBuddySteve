@@ -60,12 +60,15 @@ GW_ENV="NODE_ENV=production,PARSER_SERVICE_URL=$PARSER_URL,FRONTEND_URL=$FRONTEN
 [ -n "$GOOGLE_CLIENT_ID" ] && GW_ENV="$GW_ENV,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
 [ -n "$MS_CLIENT_ID" ] && GW_ENV="$GW_ENV,MS_CLIENT_ID=$MS_CLIENT_ID,MS_CLIENT_SECRET=$MS_CLIENT_SECRET"
 
+# --min-instances=1 keeps one instance warm (no ~30s cold start for students).
+# Set MIN_INSTANCES=0 before running to scale fully to zero (cheaper, cold starts).
 gcloud run deploy steve-gateway \
   --source ./server \
   --region "$REGION" \
   --allow-unauthenticated \
   --memory 512Mi \
   --cpu 1 \
+  --min-instances "${MIN_INSTANCES:-1}" \
   --set-env-vars "$GW_ENV"
 
 GATEWAY_URL="$(gcloud run services describe steve-gateway --region "$REGION" --format 'value(status.url)')"

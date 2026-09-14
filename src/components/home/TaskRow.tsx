@@ -1,7 +1,7 @@
 import { motion } from 'framer-motion'
 import { Check, Clock, Trash2 } from 'lucide-react'
-import TypeBadge from '../dashboard/TypeBadge.jsx'
-import { fmtTime, fmtDateLong } from '../../data/events.js'
+import TypeBadge from '../dashboard/TypeBadge'
+import { fmtTime, fmtDateLong } from '../../data/events'
 import { daysUntil, countdownLabel, urgencyColor } from '../../lib/schedule'
 import type { EventItem } from '../../types'
 

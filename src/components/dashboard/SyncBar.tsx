@@ -1,8 +1,8 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { CalendarPlus, Download, Link2, Check } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import { oauthStartUrl } from '../../lib/api.js'
+import RetroButton from '../RetroButton'
+import { oauthStartUrl } from '../../lib/api'
 
 /**
  * SyncBar — the "ship it" strip. Google / Outlook OAuth + universal .ics.
@@ -12,11 +12,18 @@ import { oauthStartUrl } from '../../lib/api.js'
  * the gateway's /api/oauth/:provider, which bounces to the provider, then back
  * to the frontend with ?synced=<provider>&status=ok&count=N — which we toast.
  */
-export default function SyncBar({ courseId, approvedCount, totalCount, icsUrl }) {
-  const [toast, setToast] = useState(null)
+interface SyncBarProps {
+  courseId?: string | null
+  approvedCount: number
+  totalCount: number
+  icsUrl?: string | null
+}
+
+export default function SyncBar({ courseId, approvedCount, totalCount, icsUrl }: SyncBarProps) {
+  const [toast, setToast] = useState<string | null>(null)
   const ready = approvedCount > 0
 
-  const fire = (msg) => {
+  const fire = (msg: string) => {
     setToast(msg)
     setTimeout(() => setToast(null), 3200)
   }
@@ -29,17 +36,17 @@ export default function SyncBar({ courseId, approvedCount, totalCount, icsUrl })
     const status = q.get('status')
     const count = q.get('count')
     const name = synced === 'google' ? 'Google Calendar' : 'Outlook'
-    const messages = {
+    const messages: Record<string, string> = {
       ok: `▸ Synced ${count || 0} event${count === '1' ? '' : 's'} to ${name}!`,
       denied: `▸ ${name} access was declined`,
       error: `▸ ${name} sync hit an error — try again`,
       bad_state: `▸ ${name} session expired — try again`,
     }
-    fire(messages[status] || `▸ ${name}: ${status}`)
+    fire((status && messages[status]) || `▸ ${name}: ${status}`)
     window.history.replaceState({}, '', window.location.pathname)
   }, [])
 
-  const connect = (provider, label) => {
+  const connect = (provider: string, label: string) => {
     if (courseId) {
       window.location.href = oauthStartUrl(provider, courseId)
     } else {

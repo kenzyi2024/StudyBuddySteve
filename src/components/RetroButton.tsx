@@ -1,16 +1,14 @@
 import { motion } from 'framer-motion'
+import type { ReactNode } from 'react'
 
 /**
- * RetroButton — a chunky arcade / mechanical-keyboard style button.
- * It physically "presses in" (offset toward its shadow) on tap, so the
- * hard drop-shadow collapses like a real key bottoming out.
- *
- * Props:
- *   color   — 'magenta' | 'cyan' | 'lime' | 'amber' | 'grape' (default magenta)
- *   as      — render element ('button' | 'a'), default 'button'
- *   size    — 'sm' | 'md' | 'lg'
+ * RetroButton — a chunky arcade / mechanical-keyboard style button that
+ * physically "presses in" (offset toward its shadow) on tap.
  */
-const COLORS = {
+type RetroColor = 'magenta' | 'cyan' | 'lime' | 'amber' | 'grape' | 'beige'
+type RetroSize = 'sm' | 'md' | 'lg'
+
+const COLORS: Record<RetroColor, string> = {
   magenta: 'bg-magenta text-ink',
   cyan: 'bg-cyan text-ink',
   lime: 'bg-lime text-ink',
@@ -19,11 +17,20 @@ const COLORS = {
   beige: 'bg-beige text-ink',
 }
 
-const SIZES = {
+const SIZES: Record<RetroSize, string> = {
   sm: 'px-4 py-2 text-xs',
   md: 'px-6 py-3 text-sm',
   lg: 'px-8 py-4 text-base',
 }
+
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type RetroButtonProps = {
+  children?: ReactNode
+  color?: RetroColor
+  size?: RetroSize
+  as?: 'button' | 'a'
+  className?: string
+} & Record<string, any>
 
 export default function RetroButton({
   children,
@@ -32,8 +39,8 @@ export default function RetroButton({
   as = 'button',
   className = '',
   ...props
-}) {
-  const MotionTag = motion[as] || motion.button
+}: RetroButtonProps) {
+  const MotionTag = (motion[as] || motion.button) as typeof motion.button
 
   return (
     <MotionTag

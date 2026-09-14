@@ -1,13 +1,21 @@
 import { useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
 import { X } from 'lucide-react'
-import RetroButton from '../RetroButton.jsx'
-import Steve from '../Steve.jsx'
-import { saveStudyPrefs } from '../../lib/api.js'
+import RetroButton from '../RetroButton'
+import Steve from '../Steve'
+import { saveStudyPrefs } from '../../lib/api'
 import { useModalA11y } from '../../lib/useModalA11y'
+import type { Ref } from 'react'
+import type { StudyPrefs } from '../../types'
+
+interface Question {
+  key: keyof StudyPrefs
+  q: string
+  options: [string | number, string][]
+}
 
 // The quiz — each question maps to one study preference.
-const QUESTIONS = [
+const QUESTIONS: Question[] = [
   {
     key: 'bestTime',
     q: 'When do you focus best?',
@@ -68,24 +76,30 @@ const QUESTIONS = [
  * StudyQuiz — onboarding quiz that sets study preferences and builds a plan.
  * Skipping uses best-practice defaults. Props: open, onClose, onDone().
  */
-export default function StudyQuiz({ open, onClose, onDone }) {
+interface StudyQuizProps {
+  open: boolean
+  onClose: () => void
+  onDone?: () => void
+}
+
+export default function StudyQuiz({ open, onClose, onDone }: StudyQuizProps) {
   return <AnimatePresence>{open && <Inner onClose={onClose} onDone={onDone} />}</AnimatePresence>
 }
 
-function Inner({ onClose, onDone }) {
+function Inner({ onClose, onDone }: Omit<StudyQuizProps, 'open'>) {
   const [step, setStep] = useState(0)
-  const [answers, setAnswers] = useState({})
+  const [answers, setAnswers] = useState<Partial<StudyPrefs>>({})
   const [busy, setBusy] = useState(false)
   const dialogRef = useModalA11y(onClose)
   const total = QUESTIONS.length
   const done = step >= total
 
-  const choose = (key, val) => {
+  const choose = (key: keyof StudyPrefs, val: string | number) => {
     setAnswers((a) => ({ ...a, [key]: val }))
     setStep((s) => s + 1)
   }
 
-  const finish = async (prefs) => {
+  const finish = async (prefs: Partial<StudyPrefs>) => {
     setBusy(true)
     try {
       await saveStudyPrefs(prefs) // server merges with defaults + builds the plan
@@ -109,7 +123,7 @@ function Inner({ onClose, onDone }) {
         animate={{ scale: 1, y: 0 }}
         exit={{ scale: 0.9, opacity: 0 }}
         transition={{ type: 'spring', stiffness: 300, damping: 24 }}
-        ref={dialogRef}
+        ref={dialogRef as Ref<HTMLDivElement>}
         tabIndex={-1}
         role="dialog"
         aria-modal="true"

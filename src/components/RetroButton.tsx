@@ -23,7 +23,6 @@ const SIZES: Record<RetroSize, string> = {
   lg: 'px-8 py-4 text-base',
 }
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type RetroButtonProps = {
   children?: ReactNode
   color?: RetroColor

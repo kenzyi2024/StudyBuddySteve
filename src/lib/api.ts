@@ -7,7 +7,6 @@
  */
 import type { StudyPrefs } from '../types'
 
-// eslint-disable-next-line @typescript-eslint/no-explicit-any
 type Json = any
 
 const BASE = (import.meta.env?.VITE_API_BASE || '/api').replace(/\/$/, '')

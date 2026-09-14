@@ -115,13 +115,14 @@ function Inner({ onClose, onAuthed }: Omit<AuthModalProps, 'open'>) {
         <form onSubmit={submit} className="space-y-4">
           {mode === 'register' && (
             <div>
-              <label className="font-pixel text-[10px] text-cyan block mb-1">NAME</label>
-              <input className={field} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
+              <label htmlFor="auth-name" className="font-pixel text-[10px] text-cyan block mb-1">NAME</label>
+              <input id="auth-name" className={field} value={name} onChange={(e) => setName(e.target.value)} autoComplete="name" />
             </div>
           )}
           <div>
-            <label className="font-pixel text-[10px] text-cyan block mb-1">EMAIL</label>
+            <label htmlFor="auth-email" className="font-pixel text-[10px] text-cyan block mb-1">EMAIL</label>
             <input
+              id="auth-email"
               type="email"
               required
               className={field}
@@ -132,8 +133,9 @@ function Inner({ onClose, onAuthed }: Omit<AuthModalProps, 'open'>) {
           </div>
           {mode !== 'forgot' && (
             <div>
-              <label className="font-pixel text-[10px] text-cyan block mb-1">PASSWORD</label>
+              <label htmlFor="auth-password" className="font-pixel text-[10px] text-cyan block mb-1">PASSWORD</label>
               <input
+                id="auth-password"
                 type="password"
                 required
                 minLength={8}

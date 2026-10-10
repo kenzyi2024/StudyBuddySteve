@@ -128,9 +128,15 @@ export function generatePlan(events = [], prefs = {}) {
       ]
       if (!topics.length) topics = [`${course} material`]
 
+      // Session count is driven by time + the student's chosen intensity, NOT by
+      // how many readings a course happens to have — so every exam of the same
+      // lead time gets a comparable plan. Topics below just fill in what each
+      // session covers (cycled across the sessions).
       const weeks = Math.max(1, Math.ceil(windowDays / 7))
-      const hardCap = kind === 'quiz' ? 3 : Math.max(topics.length + 1, 4)
-      const maxSessions = Math.min(slots.length, p.perWeek * weeks, hardCap)
+      const target = p.perWeek * weeks
+      const floor = kind === 'quiz' ? 1 : 3
+      const cap = kind === 'quiz' ? 2 : 8
+      const maxSessions = Math.min(slots.length, Math.max(floor, Math.min(target, cap)))
       const chosen = pickEven(slots, maxSessions)
 
       chosen.forEach((slot, i) => {

@@ -201,6 +201,8 @@ export default function SemesterHome({
     () => events.filter((e) => ['exam', 'quiz', 'project'].includes(e.type)).length,
     [events],
   )
+  const planOpen = useMemo(() => studyPlan.filter((e) => !e.done), [studyPlan])
+  const planDone = useMemo(() => studyPlan.filter((e) => e.done), [studyPlan])
 
   // In-page reminders while the app is open (device push, SMS, and calendar
   // sync are all handled by the RemindersModal).
@@ -454,10 +456,26 @@ export default function SemesterHome({
             {studyPlan.length ? (
               <>
                 <p className="font-mono text-base text-beige/60">
-                  {studyPlan.length} session{studyPlan.length === 1 ? '' : 's'} · spaced around your exams,
-                  quizzes &amp; projects. Check one off as you go — edit or delete like any task.
+                  {planOpen.length} to go · {planDone.length} done · spaced around your exams, quizzes
+                  &amp; projects. Check one off as you go — edit or delete like any task.
                 </p>
-                <div className="space-y-2">{studyPlan.map((e) => row(e))}</div>
+                {planOpen.length ? (
+                  <div className="space-y-2">{planOpen.map((e) => row(e))}</div>
+                ) : (
+                  <div className="retro-panel noise p-6 text-center">
+                    <Steve mood="celebrate" size={72} />
+                    <p className="font-pixel text-sm text-lime mt-3">ALL SESSIONS DONE!</p>
+                    <p className="font-mono text-base text-cyan mt-1">Nice work — you studied everything.</p>
+                  </div>
+                )}
+                {planDone.length > 0 && (
+                  <details className="mt-4">
+                    <summary className="font-pixel text-[11px] text-beige/60 cursor-pointer py-2">
+                      ✓ COMPLETED ({planDone.length})
+                    </summary>
+                    <div className="space-y-2 mt-2">{planDone.map((e) => row(e))}</div>
+                  </details>
+                )}
               </>
             ) : (
               <div className="retro-panel noise p-8 text-center">

@@ -23,3 +23,7 @@ server/__*.mjs
 !.vscode/extensions.json
 *.log
 *.tmp
+
+vite.config.js.timestamp-*.mjs
+*.tmp
+redesign-editorial.patch

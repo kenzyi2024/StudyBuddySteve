@@ -36,7 +36,34 @@ test('startDaysBefore bounds the earliest session', () => {
   assert.ok(daysBefore <= 3.5, `earliest session within window (${daysBefore}d)`)
 })
 
-test('no exams → no plan', () => {
-  const plan = generatePlan(events.filter((e) => e.type !== 'exam'), DEFAULT_PREFS)
+test('no assessments → no plan (readings alone)', () => {
+  const plan = generatePlan(
+    events.filter((e) => !['exam', 'quiz', 'project'].includes(e.type)),
+    DEFAULT_PREFS,
+  )
   assert.equal(plan.length, 0)
+})
+
+test('builds sessions around a quiz, even with no exam', () => {
+  const quizEvents = [
+    { id: 'r1', courseId: 'c1', course: 'BIO 110', type: 'reading', title: 'Read Unit 3', due: iso(2026, 9, 6) },
+    { id: 'q1', courseId: 'c1', course: 'BIO 110', type: 'quiz', title: 'Quiz 3', due: iso(2026, 9, 10, 10) },
+  ]
+  const plan = generatePlan(quizEvents, DEFAULT_PREFS)
+  assert.ok(plan.length >= 1, 'should produce at least one session')
+  assert.ok(plan.every((s) => s.type === 'study'))
+  assert.ok(plan.every((s) => new Date(s.due) < new Date(quizEvents[1].due)))
+  assert.match(plan[plan.length - 1].title, /review for .*quiz/i)
+})
+
+test('builds work sessions around a project, ending with finish & polish', () => {
+  const projectEvents = [
+    { id: 'p1', courseId: 'c2', course: 'CS 350', type: 'project', title: 'Term Project', due: iso(2026, 10, 1, 23) },
+  ]
+  const plan = generatePlan(projectEvents, DEFAULT_PREFS)
+  assert.ok(plan.length >= 1, 'should produce work sessions')
+  assert.ok(plan.every((s) => s.type === 'study'))
+  const titles = plan.map((s) => s.title).join(' | ')
+  assert.match(titles, /Work on: Term Project/)
+  assert.match(plan[plan.length - 1].title, /Finish & polish: Term Project/)
 })

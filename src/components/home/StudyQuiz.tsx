@@ -86,10 +86,13 @@ export default function StudyQuiz({ open, onClose, onDone }: StudyQuizProps) {
   return <AnimatePresence>{open && <Inner onClose={onClose} onDone={onDone} />}</AnimatePresence>
 }
 
+type Result = { ok: true; sessions: number } | { ok: false; error: string }
+
 function Inner({ onClose, onDone }: Omit<StudyQuizProps, 'open'>) {
   const [step, setStep] = useState(0)
   const [answers, setAnswers] = useState<Partial<StudyPrefs>>({})
   const [busy, setBusy] = useState(false)
+  const [result, setResult] = useState<Result | null>(null)
   const dialogRef = useModalA11y(onClose)
   const total = QUESTIONS.length
   const done = step >= total
@@ -99,13 +102,19 @@ function Inner({ onClose, onDone }: Omit<StudyQuizProps, 'open'>) {
     setStep((s) => s + 1)
   }
 
+  // Save prefs; the server merges defaults and (re)builds the plan, returning the
+  // sessions it created. Surface that outcome instead of silently closing.
   const finish = async (prefs: Partial<StudyPrefs>) => {
     setBusy(true)
+    setResult(null)
     try {
-      await saveStudyPrefs(prefs) // server merges with defaults + builds the plan
-      onDone?.()
-    } catch {
-      onDone?.() // don't block onboarding on a failure
+      const r = await saveStudyPrefs(prefs)
+      const sessions = Array.isArray(r?.sessions) ? r.sessions.length : 0
+      setResult({ ok: true, sessions })
+    } catch (e) {
+      setResult({ ok: false, error: (e as Error).message || 'Could not reach the server.' })
+    } finally {
+      setBusy(false)
     }
   }
 
@@ -138,7 +147,7 @@ function Inner({ onClose, onDone }: Omit<StudyQuizProps, 'open'>) {
             <div>
               <h3 className="font-pixel text-sm text-beige leading-tight">STUDY STYLE</h3>
               <p className="font-mono text-base text-cyan">
-                {done ? 'building your plan…' : `question ${step + 1} of ${total}`}
+                {result ? 'all set' : done ? 'ready to build' : `question ${step + 1} of ${total}`}
               </p>
             </div>
           </div>
@@ -155,7 +164,56 @@ function Inner({ onClose, onDone }: Omit<StudyQuizProps, 'open'>) {
           />
         </div>
 
-        {!done ? (
+        {result ? (
+          /* ---------- OUTCOME ---------- */
+          <div className="py-2">
+            {result.ok && result.sessions > 0 ? (
+              <>
+                <p className="font-mono text-xl text-lime mb-2">
+                  ▸ Study plan ready — {result.sessions} session{result.sessions === 1 ? '' : 's'} added.
+                </p>
+                <p className="font-body text-sm text-beige/80 mb-5">
+                  Steve spaced them around your exams, quizzes, and projects at your best time of day.
+                  Find them on the <span className="text-cyan">Study Plan</span> tab (or anywhere a
+                  <span className="text-crt"> Study</span> tag appears).
+                </p>
+                <RetroButton color="lime" size="lg" onClick={() => onDone?.()} className="w-full">
+                  ▸ View my plan
+                </RetroButton>
+              </>
+            ) : result.ok ? (
+              <>
+                <p className="font-mono text-xl text-amber mb-2">▸ Preferences saved.</p>
+                <p className="font-body text-sm text-beige/80 mb-5">
+                  Steve builds study sessions around your <span className="text-magenta">exams</span>,{' '}
+                  <span className="text-amber">quizzes</span>, and <span className="text-grape">projects</span>.
+                  There aren’t any on your calendar yet — add a syllabus or those dates, and your plan
+                  appears automatically.
+                </p>
+                <RetroButton color="lime" size="lg" onClick={() => onDone?.()} className="w-full">
+                  ▸ Got it
+                </RetroButton>
+              </>
+            ) : (
+              <>
+                <p className="font-mono text-xl text-magenta mb-2">▸ Couldn’t build your plan.</p>
+                <p className="font-body text-sm text-beige/80 mb-1">{result.error}</p>
+                <p className="font-body text-xs text-beige/60 mb-5">
+                  Your answers weren’t saved. Check your connection (or that the backend is running) and
+                  try again.
+                </p>
+                <div className="flex gap-2">
+                  <RetroButton color="beige" size="lg" onClick={onClose} className="flex-1">
+                    Close
+                  </RetroButton>
+                  <RetroButton color="lime" size="lg" disabled={busy} onClick={() => finish(answers)} className="flex-1">
+                    {busy ? 'RETRYING…' : 'Try again'}
+                  </RetroButton>
+                </div>
+              </>
+            )}
+          </div>
+        ) : !done ? (
           <div>
             <p className="font-body font-bold text-beige text-lg mb-4">{q.q}</p>
             <div className="space-y-2">

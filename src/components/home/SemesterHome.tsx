@@ -29,7 +29,7 @@ import type { EventItem, User } from '../../types'
 
 const NOTIFIED_KEY = 'steve_notified'
 
-type View = 'overview' | 'calendar' | 'tasks'
+type View = 'overview' | 'calendar' | 'tasks' | 'plan'
 
 interface SemesterHomeProps {
   user?: User | null
@@ -187,6 +187,21 @@ export default function SemesterHome({
     [scoped],
   )
 
+  // Study sessions Steve generated (events of type 'study'), newest-first by due.
+  const studyPlan = useMemo(
+    () =>
+      scoped
+        .filter((e) => e.type === 'study')
+        .sort((a, b) => new Date(a.due).getTime() - new Date(b.due).getTime()),
+    [scoped],
+  )
+  // Assessments the plan is built around — shown in the empty state so the user
+  // knows what to add if they have no plan yet.
+  const assessmentCount = useMemo(
+    () => events.filter((e) => ['exam', 'quiz', 'project'].includes(e.type)).length,
+    [events],
+  )
+
   // In-page reminders while the app is open (device push, SMS, and calendar
   // sync are all handled by the RemindersModal).
   useEffect(() => {
@@ -249,7 +264,7 @@ export default function SemesterHome({
             </div>
           </div>
           <div className="flex items-center gap-2">
-            <RetroButton color="grape" size="sm" onClick={onOpenQuiz}>
+            <RetroButton color="grape" size="sm" onClick={() => setView('plan')}>
               <Coffee size={15} /> Study Plan
             </RetroButton>
             <RetroButton color="cyan" size="sm" onClick={() => setImportOpen(true)}>
@@ -272,6 +287,7 @@ export default function SemesterHome({
             <TabBtn id="overview" icon={LayoutDashboard} label="Overview" />
             <TabBtn id="calendar" icon={CalendarDays} label="Calendar" />
             <TabBtn id="tasks" icon={ListChecks} label="Tasks" />
+            <TabBtn id="plan" icon={Coffee} label="Study Plan" />
           </div>
           <div className="flex gap-2">
             <RetroButton
@@ -419,6 +435,53 @@ export default function SemesterHome({
                 </summary>
                 <div className="space-y-2 mt-2">{scoped.filter((e) => e.done).map((e) => row(e))}</div>
               </details>
+            )}
+          </div>
+        )}
+
+        {view === 'plan' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between gap-3 flex-wrap">
+              <div className="flex items-center gap-2">
+                <Coffee size={18} className="text-grape" />
+                <h3 className="font-pixel text-sm text-beige">YOUR STUDY PLAN</h3>
+              </div>
+              <RetroButton color="grape" size="sm" onClick={onOpenQuiz}>
+                {studyPlan.length ? 'Rebuild / retake quiz' : 'Set up study plan'}
+              </RetroButton>
+            </div>
+
+            {studyPlan.length ? (
+              <>
+                <p className="font-mono text-base text-beige/60">
+                  {studyPlan.length} session{studyPlan.length === 1 ? '' : 's'} · spaced around your exams,
+                  quizzes &amp; projects. Check one off as you go — edit or delete like any task.
+                </p>
+                <div className="space-y-2">{studyPlan.map((e) => row(e))}</div>
+              </>
+            ) : (
+              <div className="retro-panel noise p-8 text-center">
+                <Steve mood="reading" size={90} />
+                <p className="font-pixel text-sm text-lime mt-3">NO STUDY SESSIONS YET</p>
+                <p className="font-mono text-lg text-cyan mt-2 max-w-md mx-auto">
+                  Steve builds your plan around <span className="text-magenta">exams</span>,{' '}
+                  <span className="text-amber">quizzes</span>, and <span className="text-grape">projects</span>.
+                  {assessmentCount === 0
+                    ? ' Add a syllabus (or those dates) and your plan appears automatically.'
+                    : ' Take the quick quiz and Steve will schedule your sessions.'}
+                </p>
+                <div className="mt-5 flex gap-2 justify-center">
+                  {assessmentCount === 0 ? (
+                    <RetroButton color="lime" size="md" onClick={onUploadMore}>
+                      <UploadCloud size={15} /> Add Syllabus
+                    </RetroButton>
+                  ) : (
+                    <RetroButton color="grape" size="md" onClick={onOpenQuiz}>
+                      <Coffee size={15} /> Build my plan
+                    </RetroButton>
+                  )}
+                </div>
+              </div>
             )}
           </div>
         )}

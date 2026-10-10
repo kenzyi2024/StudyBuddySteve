@@ -1,15 +1,22 @@
 /**
  * Thin client for the Study Buddy Steve gateway.
  *
- * BASE resolves to '/api' in dev (Vite proxy) or VITE_API_BASE in prod. Auth
- * uses a bearer token (localStorage) as the primary transport so sessions
- * survive across domains where third-party cookies are blocked.
+ * BASE resolves in this order: VITE_API_BASE if set, else the Vite proxy
+ * ('/api' → localhost:4000) in dev, else the deployed gateway in production.
+ * The gateway URL is a public endpoint (it ships in the browser bundle either
+ * way), so hard-coding the prod default is safe and means the app works without
+ * any Vercel env var. Auth uses a bearer token (localStorage) as the primary
+ * transport so sessions survive across domains where cookies are blocked.
  */
 import type { StudyPrefs } from '../types'
 
 type Json = any
 
-const BASE = (import.meta.env?.VITE_API_BASE || '/api').replace(/\/$/, '')
+// Deployed Node/Express gateway on Cloud Run (public URL).
+const PROD_API = 'https://steve-gateway-spzxweozdq-uc.a.run.app/api'
+const BASE = (
+  import.meta.env?.VITE_API_BASE || (import.meta.env?.DEV ? '/api' : PROD_API)
+).replace(/\/$/, '')
 
 const TOKEN_KEY = 'steve_token'
 let authToken: string | null = null

@@ -14,6 +14,8 @@ import {
   Trash2,
   Eraser,
   Coffee,
+  FileClock,
+  RefreshCw,
 } from 'lucide-react'
 import Steve from '../Steve'
 import RetroButton from '../RetroButton'
@@ -24,8 +26,16 @@ import ImportModal from './ImportModal'
 import TaskRow from './TaskRow'
 import { courseColors } from '../../data/events'
 import { daysUntil, countdownLabel } from '../../lib/schedule'
-import { patchEvent, deleteEvent as apiDeleteEvent, myCalendarIcsUrl, getMyEvents } from '../../lib/api'
-import type { EventItem, User } from '../../types'
+import {
+  patchEvent,
+  deleteEvent as apiDeleteEvent,
+  downloadMyCalendar,
+  getMyEvents,
+  getPendingReviews,
+  discardPendingReview,
+} from '../../lib/api'
+import { useToast } from '../../lib/toast'
+import type { EventItem, PendingReview, User } from '../../types'
 
 const NOTIFIED_KEY = 'steve_notified'
 
@@ -37,6 +47,22 @@ interface SemesterHomeProps {
   onUploadMore: () => void
   onOpenQuiz: () => void
   onLogout: () => void
+  /** Reopen the review screen for a syllabus that wasn't added yet. */
+  onResumeReview: (courseId: string) => void
+  /** Set when the semester couldn't be loaded (so it isn't shown as empty). */
+  loadError?: string | null
+  onRetryLoad?: () => void
+}
+
+const errText = (e: unknown) => (e as Error)?.message || 'network error'
+
+function readNotified(): string[] {
+  try {
+    const v = JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')
+    return Array.isArray(v) ? v : []
+  } catch {
+    return []
+  }
 }
 
 interface PendingDelete {
@@ -50,6 +76,9 @@ export default function SemesterHome({
   onUploadMore,
   onOpenQuiz,
   onLogout,
+  onResumeReview,
+  loadError = null,
+  onRetryLoad,
 }: SemesterHomeProps) {
   const [events, setEvents] = useState<EventItem[]>(initialEvents)
   const [view, setView] = useState<View>('overview') // overview | calendar | tasks
@@ -62,35 +91,72 @@ export default function SemesterHome({
   const [importOpen, setImportOpen] = useState(false)
   const [undo, setUndo] = useState<EventItem | null>(null) // recently-deleted event (undoable)
   const undoRef = useRef<PendingDelete | null>(null)
+  const [pending, setPending] = useState<PendingReview[]>([])
+  const toast = useToast()
 
-  const refreshEvents = () => getMyEvents().then((r) => setEvents(r.events || [])).catch(() => {})
-  const notifiedRef = useRef<Set<string>>(new Set(JSON.parse(localStorage.getItem(NOTIFIED_KEY) || '[]')))
+  const refreshEvents = () =>
+    getMyEvents()
+      .then((r) => setEvents(r.events || []))
+      .catch((e) => toast.error(`Couldn’t refresh your calendar: ${errText(e)}`))
+  const notifiedRef = useRef<Set<string>>(new Set(readNotified()))
 
   useEffect(() => setEvents(initialEvents), [initialEvents])
 
-  // --- persistence helpers ---
-  const patch = (id: string, body: Record<string, unknown>) => patchEvent(id, body).catch(() => {})
-  const toggleDone = (id: string) =>
-    setEvents((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e
-        const done = !e.done
-        patch(id, { done })
-        return { ...e, done }
-      }),
-    )
-  const saveEvent = (updated: EventItem) => {
-    setEvents((prev) => prev.map((e) => (e.id === updated.id ? updated : e)))
-    patch(updated.id, {
-      title: updated.title,
-      course: updated.course,
-      type: updated.type,
-      label: updated.label,
-      due: updated.due,
-      allDay: updated.allDay,
-    })
-    setEditing(null)
+  // Syllabi parsed but never added (review interrupted) — offer to resume.
+  useEffect(() => {
+    getPendingReviews()
+      .then((r) => setPending(r.courses || []))
+      .catch(() => {})
+  }, [initialEvents])
+
+  const discardPending = async (p: PendingReview) => {
+    if (!window.confirm(`Discard “${p.name}”? Its ${p.count} dates won’t be added to your calendar.`)) return
+    try {
+      await discardPendingReview(p.courseId)
+      setPending((list) => list.filter((x) => x.courseId !== p.courseId))
+    } catch (e) {
+      toast.error(`Couldn’t discard it: ${errText(e)}`)
+    }
   }
+
+  // --- persistence helpers: optimistic, rolled back with a visible error ---
+  const replace = (ev: EventItem) => setEvents((prev) => prev.map((e) => (e.id === ev.id ? ev : e)))
+  const persist = (before: EventItem, body: Record<string, unknown>, verb: string) =>
+    patchEvent(before.id, body).catch((e) => {
+      replace(before)
+      toast.error(`Couldn’t ${verb} “${before.title}”: ${errText(e)}`)
+    })
+
+  const toggleDone = (id: string) => {
+    const before = events.find((e) => e.id === id)
+    if (!before) return
+    replace({ ...before, done: !before.done })
+    persist(before, { done: !before.done }, 'update')
+  }
+  const saveEvent = (updated: EventItem) => {
+    const before = events.find((e) => e.id === updated.id)
+    replace(updated)
+    setEditing(null)
+    if (before)
+      persist(
+        before,
+        {
+          title: updated.title,
+          course: updated.course,
+          type: updated.type,
+          label: updated.label,
+          due: updated.due,
+          allDay: updated.allDay,
+        },
+        'save',
+      )
+  }
+  // Server delete; on failure put the event back and say so.
+  const removeOnServer = (ev: EventItem) =>
+    apiDeleteEvent(ev.id).catch((e) => {
+      setEvents((prev) => (prev.some((x) => x.id === ev.id) ? prev : [...prev, ev]))
+      toast.error(`Couldn’t delete “${ev.title}”: ${errText(e)}`)
+    })
   // Delete with a 5-second undo: remove from the UI immediately, but only tell
   // the server after the window closes (unless the student hits Undo).
   const deleteEvent = (id: string) => {
@@ -100,11 +166,11 @@ export default function SemesterHome({
     // commit any previous pending delete right away
     if (undoRef.current) {
       clearTimeout(undoRef.current.timer)
-      apiDeleteEvent(undoRef.current.event.id).catch(() => {})
+      removeOnServer(undoRef.current.event)
     }
     setEvents((prev) => prev.filter((e) => e.id !== id))
     const timer = setTimeout(() => {
-      apiDeleteEvent(id).catch(() => {})
+      removeOnServer(ev)
       undoRef.current = null
       setUndo(null)
     }, 5000)
@@ -123,7 +189,13 @@ export default function SemesterHome({
   const deleteMany = (ids: string[]) => {
     const set = new Set(ids)
     setEvents((prev) => prev.filter((e) => !set.has(e.id)))
-    ids.forEach((id) => apiDeleteEvent(id).catch(() => {}))
+    Promise.allSettled(ids.map((id) => apiDeleteEvent(id))).then((results) => {
+      const failed = results.filter((r) => r.status === 'rejected').length
+      if (failed) {
+        toast.error(`${failed} of ${ids.length} couldn’t be deleted — they’re back in your list.`)
+        refreshEvents()
+      }
+    })
   }
   const clearCompleted = () => {
     const ids = scoped.filter((e) => e.done).map((e) => e.id)
@@ -135,16 +207,14 @@ export default function SemesterHome({
     if (ids.length && window.confirm(`Delete ALL ${ids.length} task(s) shown? This can't be undone.`))
       deleteMany(ids)
   }
-  const reschedule = (id: string, y: number, m: number, d: number) =>
-    setEvents((prev) =>
-      prev.map((e) => {
-        if (e.id !== id) return e
-        const old = new Date(e.due)
-        const due = new Date(Date.UTC(y, m, d, old.getUTCHours(), old.getUTCMinutes())).toISOString()
-        patch(id, { due })
-        return { ...e, due }
-      }),
-    )
+  const reschedule = (id: string, y: number, m: number, d: number) => {
+    const before = events.find((e) => e.id === id)
+    if (!before) return
+    const old = new Date(before.due)
+    const due = new Date(Date.UTC(y, m, d, old.getUTCHours(), old.getUTCMinutes())).toISOString()
+    replace({ ...before, due })
+    persist(before, { due }, 'move')
+  }
 
   // --- courses (for the filter + per-course colors), from the shared palette ---
   const courseMap = useMemo(() => courseColors(events), [events])
@@ -218,7 +288,13 @@ export default function SemesterHome({
       notifiedRef.current.add(e.id)
       changed = true
     }
-    if (changed) localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notifiedRef.current]))
+    if (changed) {
+      try {
+        localStorage.setItem(NOTIFIED_KEY, JSON.stringify([...notifiedRef.current]))
+      } catch {
+        /* storage full / unavailable — worst case a reminder repeats */
+      }
+    }
   }, [notify, events])
 
   const TabBtn = ({ id, icon: Icon, label }: { id: View; icon: typeof CalendarDays; label: string }) => {
@@ -283,6 +359,38 @@ export default function SemesterHome({
       </header>
 
       <main className="max-w-6xl mx-auto px-5 py-6 space-y-6">
+        {/* couldn't load — say so instead of showing an empty semester */}
+        {loadError && (
+          <div className="flex flex-wrap items-center justify-between gap-3 bg-magenta text-ink border-3 border-ink shadow-chunk px-4 py-3">
+            <span className="font-mono text-lg">! Couldn’t load your semester: {loadError}</span>
+            {onRetryLoad && (
+              <RetroButton color="beige" size="sm" onClick={onRetryLoad}>
+                <RefreshCw size={14} /> Retry
+              </RetroButton>
+            )}
+          </div>
+        )}
+
+        {/* syllabi that were parsed but never added */}
+        {pending.map((p) => (
+          <div
+            key={p.courseId}
+            className="flex flex-wrap items-center justify-between gap-3 bg-amber text-ink border-3 border-ink shadow-chunk px-4 py-3"
+          >
+            <span className="flex items-center gap-2 font-mono text-lg">
+              <FileClock size={18} /> {p.name}: {p.count} date{p.count === 1 ? '' : 's'} waiting for your review
+            </span>
+            <div className="flex gap-2">
+              <RetroButton color="magenta" size="sm" onClick={() => discardPending(p)}>
+                Discard
+              </RetroButton>
+              <RetroButton color="lime" size="sm" onClick={() => onResumeReview(p.courseId)}>
+                Review
+              </RetroButton>
+            </div>
+          </div>
+        ))}
+
         {/* tabs */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
           <div className="flex gap-2">
@@ -304,14 +412,9 @@ export default function SemesterHome({
             <RetroButton
               color="lime"
               size="sm"
-              onClick={() => {
-                const a = document.createElement('a')
-                a.href = myCalendarIcsUrl()
-                a.download = 'my-semester.ics'
-                document.body.appendChild(a)
-                a.click()
-                a.remove()
-              }}
+              onClick={() =>
+                downloadMyCalendar().catch((e) => toast.error(`Download failed: ${errText(e)}`))
+              }
             >
               <Download size={15} /> .ics
             </RetroButton>

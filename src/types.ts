@@ -47,3 +47,10 @@ export interface User {
   emailVerified?: boolean
   studyPrefs?: StudyPrefs | null
 }
+
+/** A parsed syllabus whose events haven't been added to the calendar yet. */
+export interface PendingReview {
+  courseId: string
+  name: string
+  count: number
+}

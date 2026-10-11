@@ -1,5 +1,5 @@
 import { motion, AnimatePresence } from 'framer-motion'
-import { Pencil, Check, AlertCircle, Clock } from 'lucide-react'
+import { Pencil, Trash2, AlertCircle, Clock } from 'lucide-react'
 import TypeBadge from './TypeBadge'
 import { fmtTime, fmtDateLong, isoDateKey } from '../../data/events'
 import type { EventItem } from '../../types'
@@ -31,14 +31,15 @@ function groupByDay(events: EventItem[]): DayGroup[] {
 interface ListViewProps {
   events: EventItem[]
   onEdit: (e: EventItem) => void
-  onToggleApprove: (id: string) => void
+  onDelete: (id: string) => void
 }
 
 /**
  * ListView — grouped, chronological list of extracted events.
- * Each row can be approved, edited, and shows a low-confidence flag.
+ * Each row can be edited or removed (everything kept is added to the
+ * calendar), and low-confidence rows are flagged.
  */
-export default function ListView({ events, onEdit, onToggleApprove }: ListViewProps) {
+export default function ListView({ events, onEdit, onDelete }: ListViewProps) {
   const groups = groupByDay(events)
 
   if (!events.length) {
@@ -47,7 +48,7 @@ export default function ListView({ events, onEdit, onToggleApprove }: ListViewPr
         <p className="font-pixel text-sm text-beige">NO DATES FOUND</p>
         <p className="font-mono text-xl text-cyan mt-2">
           Steve didn&apos;t spot any deadlines in that file. Try a syllabus with a
-          schedule/dates, or add events manually.
+          schedule or dated deadlines.
         </p>
       </div>
     )
@@ -75,18 +76,8 @@ export default function ListView({ events, onEdit, onToggleApprove }: ListViewPr
                     animate={{ opacity: 1, x: 0 }}
                     exit={{ opacity: 0, x: 16 }}
                     className={`retro-panel noise flex items-center gap-3 p-3 sm:p-4 shadow-chunk
-                      ${e.approved ? 'ring-3 ring-lime' : ''}`}
+                      ${lowConf ? 'ring-3 ring-amber' : ''}`}
                   >
-                    {/* approve toggle */}
-                    <button
-                      onClick={() => onToggleApprove(e.id)}
-                      aria-label={e.approved ? 'Un-approve' : 'Approve'}
-                      className={`shrink-0 w-9 h-9 grid place-items-center border-3 border-ink
-                        transition-colors ${e.approved ? 'bg-lime' : 'bg-void hover:bg-dusk'}`}
-                    >
-                      {e.approved && <Check size={18} className="text-ink" strokeWidth={3} />}
-                    </button>
-
                     {/* main */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
@@ -117,6 +108,14 @@ export default function ListView({ events, onEdit, onToggleApprove }: ListViewPr
                       aria-label="Edit"
                     >
                       <Pencil size={16} />
+                    </button>
+                    <button
+                      onClick={() => onDelete(e.id)}
+                      className="shrink-0 w-9 h-9 grid place-items-center border-3 border-ink
+                        bg-void hover:bg-magenta hover:text-ink text-magenta transition-colors"
+                      aria-label={`Remove ${e.title}`}
+                    >
+                      <Trash2 size={16} />
                     </button>
                   </motion.div>
                 )

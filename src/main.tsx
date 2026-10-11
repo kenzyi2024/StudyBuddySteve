@@ -1,6 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
 import App from './App'
+import { ToastProvider } from './components/ToastProvider'
+import ErrorBoundary from './components/ErrorBoundary'
 import './index.css'
 
 // Optional error tracking — lazy-loaded only when a DSN is configured, so it
@@ -13,6 +15,10 @@ if (import.meta.env?.VITE_SENTRY_DSN) {
 
 ReactDOM.createRoot(document.getElementById('root') as HTMLElement).render(
   <React.StrictMode>
-    <App />
+    <ErrorBoundary>
+      <ToastProvider>
+        <App />
+      </ToastProvider>
+    </ErrorBoundary>
   </React.StrictMode>,
 )

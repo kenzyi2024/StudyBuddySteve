@@ -10,7 +10,16 @@ import SemesterHome from './components/home/SemesterHome'
 import AuthModal from './components/AuthModal'
 import ResetPasswordModal from './components/ResetPasswordModal'
 import StudyQuiz from './components/home/StudyQuiz'
-import { me, logout, getMyEvents, verifyEmail, resendVerification } from './lib/api'
+import {
+  me,
+  logout,
+  getMyEvents,
+  getPendingReviews,
+  getCourseEvents,
+  verifyEmail,
+  resendVerification,
+} from './lib/api'
+import { useToast } from './lib/toast'
 import type { EventItem, User } from './types'
 
 type Screen = 'upload' | 'dashboard' | 'home'
@@ -39,16 +48,15 @@ const FEATURES = [
 export default function App() {
   const [wipe, setWipe] = useState(false)
   const [screen, setScreen] = useState<Screen>('upload') // 'upload' | 'dashboard' | 'home'
-  const [parsed, setParsed] = useState<{ courseId: string | null; events: EventItem[] | null }>({
-    courseId: null,
-    events: null,
-  })
+  const [parsed, setParsed] = useState<{ courseId: string; events: EventItem[] } | null>(null)
   const [user, setUser] = useState<User | null>(null)
   const [authOpen, setAuthOpen] = useState(false)
   const [homeEvents, setHomeEvents] = useState<EventItem[]>([])
   const [quizOpen, setQuizOpen] = useState(false)
   const [resetToken, setResetToken] = useState<string | null>(null)
   const [banner, setBanner] = useState<string | null>(null) // transient top banner
+  const [homeError, setHomeError] = useState<string | null>(null) // semester failed to load
+  const toast = useToast()
 
   // Handle ?verify / ?reset links, then restore session.
   useEffect(() => {
@@ -73,22 +81,43 @@ export default function App() {
     me()
       .then(async (r) => {
         setUser(r.user)
-        if (r.user) {
-          const ev = await loadHomeEvents()
-          if (ev.length) setScreen('home')
-        }
+        if (r.user && (await hasSemester())) setScreen('home')
       })
       .catch(() => {})
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [])
 
-  const loadHomeEvents = async () => {
+  // Load the account calendar. On failure, record the error (the home screen
+  // shows it with a Retry) rather than pretending the student has no events.
+  const loadHomeEvents = async (): Promise<EventItem[] | null> => {
     try {
       const { events } = await getMyEvents()
       setHomeEvents(events || [])
+      setHomeError(null)
       return events || []
-    } catch {
-      setHomeEvents([])
-      return []
+    } catch (e) {
+      setHomeError((e as Error)?.message || 'network error')
+      return null
+    }
+  }
+
+  // Should a signed-in student land on My Semester? Yes if they have events,
+  // a review in progress, or we couldn't tell (load failed → show the error).
+  const hasSemester = async (): Promise<boolean> => {
+    const ev = await loadHomeEvents()
+    if (ev === null || ev.length) return true
+    const pending = await getPendingReviews().catch(() => ({ courses: [] }))
+    return (pending.courses || []).length > 0
+  }
+
+  // Reopen the review screen for a syllabus that was parsed but not added.
+  const resumeReview = async (courseId: string) => {
+    try {
+      const { events } = await getCourseEvents(courseId)
+      setParsed({ courseId, events: events || [] })
+      transitionTo('dashboard')
+    } catch (e) {
+      toast.error(`Couldn’t open that review: ${(e as Error)?.message || 'network error'}`)
     }
   }
 
@@ -98,7 +127,7 @@ export default function App() {
   }
 
   const handleParsed = (result: { courseId: string; events: EventItem[] }) => {
-    setParsed(result || { courseId: null, events: null })
+    setParsed(result)
     transitionTo('dashboard')
   }
 
@@ -111,8 +140,7 @@ export default function App() {
   const onAuthed = async (u: User) => {
     setUser(u)
     setAuthOpen(false)
-    const ev = await loadHomeEvents()
-    if (ev.length) transitionTo('home')
+    if (await hasSemester()) transitionTo('home')
     // First-timers (no saved study prefs) get the onboarding study quiz.
     if (!u.studyPrefs) setQuizOpen(true)
   }
@@ -169,8 +197,7 @@ export default function App() {
           setUser(u)
           setBanner('✓ Password updated — you’re logged in.')
           setTimeout(() => setBanner(null), 4000)
-          const ev = await loadHomeEvents()
-          if (ev.length) transitionTo('home')
+          if (await hasSemester()) transitionTo('home')
         }}
       />
 
@@ -194,14 +221,19 @@ export default function App() {
           onUploadMore={() => transitionTo('upload')}
           onOpenQuiz={() => setQuizOpen(true)}
           onLogout={doLogout}
+          onResumeReview={resumeReview}
+          loadError={homeError}
+          onRetryLoad={loadHomeEvents}
         />
       )}
 
-      {screen === 'dashboard' && (
+      {screen === 'dashboard' && parsed && (
         <Dashboard
+          key={parsed.courseId}
           courseId={parsed.courseId}
           initialEvents={parsed.events}
-          onBack={goHome}
+          onExit={goHome}
+          onUploadAnother={() => transitionTo('upload')}
         />
       )}
 

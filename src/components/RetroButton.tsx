@@ -37,31 +37,30 @@ export default function RetroButton({
   size = 'md',
   as = 'button',
   className = '',
+  disabled,
   ...props
 }: RetroButtonProps) {
   const MotionTag = (motion[as] || motion.button) as typeof motion.button
+  // Disabled buttons don't hover/press and read as unavailable.
+  const motionProps = disabled
+    ? {}
+    : {
+        whileHover: { boxShadow: '8px 8px 0 0 #0a0812', x: -1, y: -1 },
+        // Press: collapse into the shadow like a mechanical key bottoming out
+        whileTap: { boxShadow: '0px 0px 0 0 #0a0812', x: 6, y: 6, transition: { duration: 0.04 } },
+      }
 
   return (
     <MotionTag
       // Rest state: chunky offset shadow (the "un-pressed" key)
       initial={{ boxShadow: '6px 6px 0 0 #0a0812', x: 0, y: 0 }}
-      whileHover={{
-        boxShadow: '8px 8px 0 0 #0a0812',
-        x: -1,
-        y: -1,
-      }}
-      // Press: collapse into the shadow like a mechanical key bottoming out
-      whileTap={{
-        boxShadow: '0px 0px 0 0 #0a0812',
-        x: 6,
-        y: 6,
-        transition: { duration: 0.04 },
-      }}
+      {...motionProps}
       transition={{ type: 'spring', stiffness: 600, damping: 22 }}
       className={`inline-flex items-center justify-center gap-2 select-none
         border-3 border-ink font-pixel uppercase tracking-wide
-        cursor-pointer active:cursor-progress
+        ${disabled ? 'opacity-40 cursor-not-allowed' : 'cursor-pointer active:cursor-progress'}
         ${COLORS[color]} ${SIZES[size]} ${className}`}
+      disabled={disabled}
       {...props}
     >
       {children}

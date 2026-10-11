@@ -142,14 +142,21 @@ export async function patchEvent(eventId: string, patch: Record<string, unknown>
 export async function deleteEvent(eventId: string): Promise<Json> {
   return json(await req(`/events/${eventId}`, { method: 'DELETE' }))
 }
-export async function approveCourse(courseId: string): Promise<Json> {
-  return json(await req(`/courses/${courseId}/approve`, { method: 'POST' }))
-}
 export async function commitCourse(courseId: string): Promise<Json> {
   return json(await req(`/courses/${courseId}/commit`, { method: 'POST' }))
 }
 export async function getMyEvents(): Promise<Json> {
   return json(await req('/me/events'))
+}
+// Syllabi parsed but not yet added to the calendar: [{ courseId, name, count }].
+export async function getPendingReviews(): Promise<Json> {
+  return json(await req('/me/pending'))
+}
+export async function getCourseEvents(courseId: string): Promise<Json> {
+  return json(await req(`/courses/${courseId}/events`))
+}
+export async function discardPendingReview(courseId: string): Promise<Json> {
+  return json(await req(`/courses/${courseId}/pending`, { method: 'DELETE' }))
 }
 
 // --- import from another calendar ---
@@ -214,37 +221,37 @@ export async function unsubscribePush(endpoint: string): Promise<Json> {
   return json(await req('/push/unsubscribe', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ endpoint }) }))
 }
 
-// Absolute URL for the whole-account .ics (subscribe/download).
-export function myCalendarIcsUrl({ reminder }: { reminder?: number } = {}): string {
-  const qs = new URLSearchParams()
-  if (reminder) qs.set('reminder', String(reminder))
-  if (authToken) qs.set('token', authToken)
-  const s = qs.toString() ? `?${qs}` : ''
-  return `${BASE}/me/calendar.ics${s}`
+// --- calendar files & subscription feed ---
+// Absolute gateway base (BASE is relative '/api' in dev behind the Vite proxy).
+function absoluteBase(): string {
+  return new URL(BASE, window.location.origin).href.replace(/\/$/, '')
 }
 
-// --- calendar sync ---
-// Reached by top-level navigation / plain links, which can't send an
-// Authorization header — so the token travels as ?token= (backend accepts it).
-export function oauthStartUrl(provider: string, courseId?: string): string {
-  const qs = new URLSearchParams()
-  if (courseId) qs.set('courseId', courseId)
-  if (authToken) qs.set('token', authToken)
-  const s = qs.toString() ? `?${qs}` : ''
-  return `${BASE}/oauth/${provider}${s}`
+// Download an .ics through an authenticated request (no token in the URL).
+async function downloadIcs(path: string, filename: string): Promise<void> {
+  const res = await req(path)
+  if (!res.ok) await json(res) // throws with the server's message
+  const url = URL.createObjectURL(await res.blob())
+  const a = document.createElement('a')
+  a.href = url
+  a.download = filename
+  document.body.appendChild(a)
+  a.click()
+  a.remove()
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
-export async function oauthStatus(): Promise<Json> {
-  try {
-    return await json(await req('/oauth/status'))
-  } catch {
-    return { google: false, outlook: false }
-  }
+export function downloadMyCalendar(): Promise<void> {
+  return downloadIcs('/me/calendar.ics', 'my-semester.ics')
 }
-export function calendarIcsUrl(courseId: string, { all = false, reminder }: { all?: boolean; reminder?: number } = {}): string {
-  const qs = new URLSearchParams()
-  if (all) qs.set('all', '1')
-  if (reminder) qs.set('reminder', String(reminder))
-  if (authToken) qs.set('token', authToken)
-  const suffix = qs.toString() ? `?${qs}` : ''
-  return `${BASE}/courses/${courseId}/calendar.ics${suffix}`
+
+// Read-only subscription URL for calendar apps. It contains a feed-only secret
+// (not the login token), and resetFeedUrl() invalidates the old link.
+const feedUrlFor = (token: string) => `${absoluteBase()}/feed/${token}.ics`
+export async function getFeedUrl(): Promise<string> {
+  const { token } = await json(await req('/me/feed'))
+  return feedUrlFor(token)
+}
+export async function resetFeedUrl(): Promise<string> {
+  const { token } = await json(await req('/me/feed/rotate', { method: 'POST' }))
+  return feedUrlFor(token)
 }

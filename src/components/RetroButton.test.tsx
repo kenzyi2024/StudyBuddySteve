@@ -16,6 +16,19 @@ describe('RetroButton', () => {
     expect(onClick).toHaveBeenCalledOnce()
   })
 
+  it('does not fire onClick when disabled', async () => {
+    const onClick = vi.fn()
+    render(
+      <RetroButton onClick={onClick} disabled>
+        Go
+      </RetroButton>,
+    )
+    const btn = screen.getByRole('button', { name: 'Go' })
+    expect(btn).toBeDisabled()
+    await userEvent.click(btn)
+    expect(onClick).not.toHaveBeenCalled()
+  })
+
   it('renders as an anchor when as="a"', () => {
     render(
       <RetroButton as="a" href="#upload">

@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react'
 import { AnimatePresence, motion } from 'framer-motion'
-import { X, BellRing, Smartphone, CalendarClock, Check, Download, ExternalLink, Copy, Mail, Clock } from 'lucide-react'
+import { X, BellRing, Smartphone, CalendarClock, Check, Download, ExternalLink, Copy, Mail, Clock, RotateCcw } from 'lucide-react'
 import RetroButton from '../RetroButton'
 import Steve from '../Steve'
 import {
@@ -9,7 +9,9 @@ import {
   subscribePush,
   unsubscribePush,
   saveReminderPrefs,
-  myCalendarIcsUrl,
+  downloadMyCalendar,
+  getFeedUrl,
+  resetFeedUrl,
 } from '../../lib/api'
 import { useModalA11y } from '../../lib/useModalA11y'
 import type { Ref } from 'react'
@@ -32,10 +34,6 @@ function urlB64ToUint8Array(base64: string): Uint8Array {
 
 // Turn the (possibly relative) ics path into an absolute URL a calendar service
 // can fetch.
-function absoluteIcs() {
-  return new URL(myCalendarIcsUrl(), window.location.origin).href
-}
-
 // Retro on/off switch.
 function Toggle({ on, disabled, onClick }: { on: boolean; disabled?: boolean; onClick: () => void }) {
   return (
@@ -79,10 +77,16 @@ function Inner({ onClose, user }: Omit<RemindersModalProps, 'open'>) {
   const [emailOn, setEmailOn] = useState(!!user?.emailReminders)
   const [lead, setLead] = useState(user?.reminderLead || 24)
   const [msg, setMsg] = useState<string | null>(null)
+  // Read-only subscription URL (fetched up front so "Add to Google" can open a
+  // window synchronously inside the click, which popup blockers require).
+  const [feedUrl, setFeedUrl] = useState<string | null>(null)
   const dialogRef = useModalA11y(onClose)
 
   useEffect(() => {
     reminderStatus().then(setServer)
+    getFeedUrl()
+      .then(setFeedUrl)
+      .catch(() => flash('Couldn’t load your calendar link — try reopening this window.'))
     ;(async () => {
       if (typeof Notification === 'undefined' || !('serviceWorker' in navigator)) return setPushState('unsupported')
       if (Notification.permission === 'denied') return setPushState('denied')
@@ -198,24 +202,31 @@ function Inner({ onClose, user }: Omit<RemindersModalProps, 'open'>) {
   ]
 
   const downloadIcs = () => {
-    const a = document.createElement('a')
-    a.href = myCalendarIcsUrl()
-    a.download = 'my-semester.ics'
-    document.body.appendChild(a)
-    a.click()
-    a.remove()
+    downloadMyCalendar().catch((e) => flash((e as Error).message || 'Download failed — try again.'))
   }
   const addToGoogle = () => {
-    const url = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(absoluteIcs())}`
+    if (!feedUrl) return
+    const url = `https://calendar.google.com/calendar/r?cid=${encodeURIComponent(feedUrl)}`
     window.open(url, '_blank', 'noopener')
   }
   const copySubscribe = async () => {
-    const webcal = absoluteIcs().replace(/^https?:/, 'webcal:')
+    if (!feedUrl) return
+    const webcal = feedUrl.replace(/^https?:/, 'webcal:')
     try {
       await navigator.clipboard.writeText(webcal)
       flash('Subscribe link copied — paste into Apple/Outlook “Add calendar → From URL”.')
     } catch {
       flash(webcal)
+    }
+  }
+  // New secret link; calendars subscribed with the old one stop updating.
+  const resetLink = async () => {
+    if (!window.confirm('Reset your calendar link? Calendars subscribed with the old link stop updating, and you’ll need to subscribe again.')) return
+    try {
+      setFeedUrl(await resetFeedUrl())
+      flash('New calendar link ready — re-subscribe with it.')
+    } catch (e) {
+      flash((e as Error).message || 'Couldn’t reset the link — try again.')
     }
   }
 
@@ -360,16 +371,26 @@ function Inner({ onClose, user }: Omit<RemindersModalProps, 'open'>) {
             (every deadline has an alarm).
           </p>
           <div className="flex flex-wrap gap-2">
-            <RetroButton color="cyan" size="sm" onClick={addToGoogle}>
+            <RetroButton color="cyan" size="sm" onClick={addToGoogle} disabled={!feedUrl}>
               <ExternalLink size={14} /> Add to Google
             </RetroButton>
-            <RetroButton color="amber" size="sm" onClick={copySubscribe}>
+            <RetroButton color="amber" size="sm" onClick={copySubscribe} disabled={!feedUrl}>
               <Copy size={14} /> Apple / Outlook link
             </RetroButton>
             <RetroButton color="lime" size="sm" onClick={downloadIcs}>
               <Download size={14} /> .ics
             </RetroButton>
           </div>
+          <p className="font-mono text-sm text-beige/60 mt-3">
+            The subscribe link is private and read-only. Shared it by mistake?{' '}
+            <button
+              onClick={resetLink}
+              disabled={!feedUrl}
+              className="inline-flex items-center gap-1 underline decoration-dashed underline-offset-2 hover:text-magenta"
+            >
+              <RotateCcw size={12} /> Reset link
+            </button>
+          </p>
         </div>
 
         <AnimatePresence>

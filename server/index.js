@@ -85,7 +85,7 @@ app.use((_req, res, next) => {
   next()
 })
 
-app.use(attachUser) // reads Bearer header / cookie / ?token
+app.use(attachUser) // reads Bearer header / cookie
 
 // Reject sessions issued before the user's last password change.
 app.use(async (req, _res, next) => {
@@ -449,6 +449,18 @@ app.post('/api/courses/:id/commit', requireAuth, async (req, res) => {
   res.json({ committed: events.length, events })
 })
 
+// Syllabi parsed but not yet added to the calendar (so an interrupted review
+// can be resumed instead of the events silently disappearing).
+app.get('/api/me/pending', requireAuth, async (req, res) => {
+  res.json({ courses: await store.pendingCourses(req.userId) })
+})
+
+app.delete('/api/courses/:id/pending', requireAuth, async (req, res) => {
+  if (!(await store.getCourse(req.userId, req.params.id)))
+    return res.status(404).json({ error: 'Unknown course' })
+  res.json({ discarded: await store.discardPending(req.userId, req.params.id) })
+})
+
 // ------------------------------------------------------------------
 //  Universal .ics (auth-scoped)
 // ------------------------------------------------------------------
@@ -597,19 +609,37 @@ app.post('/api/cron/send-reminders', async (req, res) => {
   res.json({ users: Object.keys(byUser).length, pushSent, smsSent, emailSent, events: remindedIds.length })
 })
 
-// One .ics for the user's ENTIRE account (all courses) — subscribe once.
-app.get('/api/me/calendar.ics', requireAuth, async (req, res) => {
-  const [events, user] = await Promise.all([
-    store.allEventsForUser(req.userId),
-    store.getUserById(req.userId),
-  ])
+// One .ics for the user's ENTIRE account (all courses).
+async function sendAccountIcs(res, userId, reminderQuery, disposition) {
+  const [events, user] = await Promise.all([store.allEventsForUser(userId), store.getUserById(userId)])
   const ics = buildICS(events, {
     calName: 'My Semester · Study Buddy Steve',
-    reminderMinutes: Number(req.query.reminder) || (user?.reminderLead || 24) * 60,
+    reminderMinutes: Number(reminderQuery) || (user?.reminderLead || 24) * 60,
   })
   res.setHeader('Content-Type', 'text/calendar; charset=utf-8')
-  res.setHeader('Content-Disposition', 'attachment; filename="my-semester.ics"')
+  res.setHeader('Content-Disposition', `${disposition}; filename="my-semester.ics"`)
   res.send(ics)
+}
+
+// Download (signed-in).
+app.get('/api/me/calendar.ics', requireAuth, async (req, res) => {
+  await sendAccountIcs(res, req.userId, req.query.reminder, 'attachment')
+})
+
+// Subscription feed: calendar apps poll this URL. The token in the path is a
+// read-only secret (not a login session) and can be reset by the student.
+app.get('/api/me/feed', requireAuth, async (req, res) => {
+  res.json({ token: await store.getFeedToken(req.userId) })
+})
+app.post('/api/me/feed/rotate', requireAuth, async (req, res) => {
+  res.json({ token: await store.rotateFeedToken(req.userId) })
+})
+app.get('/api/feed/:file', async (req, res) => {
+  const m = /^([a-f0-9]{48})\.ics$/.exec(req.params.file)
+  const userId = m ? await store.findUserIdByFeedToken(m[1]) : null
+  if (!userId) return res.status(404).json({ error: 'Unknown calendar feed' })
+  res.setHeader('Cache-Control', 'private, max-age=300')
+  await sendAccountIcs(res, userId, req.query.reminder, 'inline')
 })
 
 // ------------------------------------------------------------------
@@ -619,13 +649,15 @@ app.get('/api/oauth/status', (_req, res) => {
   res.json({ google: isConfigured('google'), outlook: isConfigured('outlook') })
 })
 
-app.get('/api/oauth/:provider', requireAuth, (req, res) => {
+// Start OAuth: the signed-in frontend asks for the provider URL (bearer auth),
+// then navigates there. No session token ever travels in a URL.
+app.post('/api/oauth/:provider/start', requireAuth, (req, res) => {
   const { provider } = req.params
-  if (!PROVIDERS[provider]) return res.status(404).send('Unknown provider')
+  if (!PROVIDERS[provider]) return res.status(404).json({ error: 'Unknown provider' })
   if (!isConfigured(provider))
-    return res.status(503).send(`${provider} OAuth not configured. See OAUTH_SETUP.md.`)
-  const state = encodeState({ provider, userId: req.userId, courseId: req.query.courseId || null })
-  res.redirect(buildAuthUrl(provider, state))
+    return res.status(503).json({ error: `${provider} sync isn’t configured on this server yet.` })
+  const state = encodeState({ provider, userId: req.userId, courseId: req.body?.courseId || null })
+  res.json({ url: buildAuthUrl(provider, state) })
 })
 
 app.get('/api/oauth/:provider/callback', async (req, res) => {

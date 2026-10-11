@@ -43,7 +43,10 @@ def _parse(s: str):
         return None
     if _HAS_DATEPARSER:
         return dateparser.parse(s, settings={"PREFER_DATES_FROM": "future"})
-    for fmt in ("%m/%d/%Y", "%m/%d/%y", "%B %d %Y", "%b %d %Y", "%B %d", "%b %d"):
+    for fmt in (
+        "%m/%d/%Y", "%m/%d/%y", "%m/%d",
+        "%B %d, %Y", "%b %d, %Y", "%B %d %Y", "%b %d %Y", "%B %d", "%b %d",
+    ):
         try:
             return datetime.strptime(s.strip(), fmt)
         except ValueError:
@@ -56,6 +59,32 @@ def _clamp_year(dt, base_year):
     if dt and base_year and dt.year < base_year:
         return dt.replace(year=base_year)
     return dt
+
+
+HAS_YEAR = re.compile(r"\b(?:19|20)\d{2}\b|\b\d{1,2}/\d{1,2}/\d{2,4}\b")
+
+
+def _resolve(s: str, base_year, season=None):
+    """Parse a syllabus date string, anchoring year-less dates to the term.
+
+    Without this, "Sept 14" in a Fall 2026 syllabus uploaded in October became
+    Sept 14 *2027* (dateparser prefers future dates). When the document's year
+    is known, a year-less date gets that year; in a Fall term, Jan/Feb dates
+    roll into the next year (finals week). An explicit year in the string is
+    kept, except a stray earlier year, which snaps up (see _clamp_year).
+    """
+    dt = _parse(s)
+    if not dt:
+        return None
+    if not base_year:
+        return dt  # year unknown — fall back to dateparser's future preference
+    if HAS_YEAR.search(s):
+        return _clamp_year(dt, base_year)
+    year = base_year + 1 if season == "fall" and dt.month <= 2 else base_year
+    try:
+        return dt.replace(year=year)
+    except ValueError:  # Feb 29 in a non-leap year
+        return dt
 
 
 # --- typing ------------------------------------------------------------
@@ -96,25 +125,30 @@ def find_term(text: str):
 
 
 def _base_year(text: str, term):
+    """The syllabus's year from its term or any 20xx in the text, else None."""
     if term:
         return int(term.split()[-1])
     m = re.search(r"\b(20\d{2})\b", text)
-    return int(m.group(1)) if m else datetime.now().year
+    return int(m.group(1)) if m else None
+
+
+def _season(term):
+    return term.split()[0].lower() if term else None
 
 
 # --- table path --------------------------------------------------------
 
-def _week_end(cell: str, base_year: int):
+def _week_end(cell: str, base_year, season=None):
     flat = cell.replace("\n", " ")
     yr = re.search(r"\b(20\d{2})\b", flat)
-    y = int(yr.group(1)) if yr else base_year
     months = MON_DATE.findall(flat)
     if months:
-        return _clamp_year(_parse(f"{months[-1][0]} {y}"), base_year)
+        last = months[-1][0]
+        return _resolve(f"{last} {yr.group(1)}" if yr else last, base_year, season)
     return None
 
 
-def _bullets(cell: str, week_end, base_year: int) -> list[dict]:
+def _bullets(cell: str, week_end, base_year, season=None) -> list[dict]:
     flat = re.sub(r"\s*\n\s*", " ", cell)
     flat = VERB_SPLIT.sub(" • ", flat)
     out = []
@@ -126,7 +160,7 @@ def _bullets(cell: str, week_end, base_year: int) -> list[dict]:
         due = None
         all_day = True
         if nums:
-            due = _clamp_year(_parse(nums[-1]), base_year)
+            due = _resolve(nums[-1], base_year, season)
             all_day = False
             tm = TIME_RE.findall(p)
             if tm and due:
@@ -158,7 +192,7 @@ def _bullets(cell: str, week_end, base_year: int) -> list[dict]:
     return out
 
 
-def _events_from_tables(tables, base_year: int) -> list[dict]:
+def _events_from_tables(tables, base_year, season=None) -> list[dict]:
     events = []
     for table in tables:
         for row in table:
@@ -171,13 +205,15 @@ def _events_from_tables(tables, base_year: int) -> list[dict]:
                 cells,
                 key=lambda c: c.count("•") + c.lower().count("submit") + c.lower().count("read"),
             )
-            events += _bullets(deadline_cell, _week_end(week_cell, base_year), base_year)
+            events += _bullets(
+                deadline_cell, _week_end(week_cell, base_year, season), base_year, season
+            )
     return events
 
 
 # --- flat-text fallback ------------------------------------------------
 
-def _events_from_text(text: str, base_year: int) -> list[dict]:
+def _events_from_text(text: str, base_year, season=None) -> list[dict]:
     events = []
     for line in text.splitlines():
         line = line.strip()
@@ -186,7 +222,7 @@ def _events_from_text(text: str, base_year: int) -> list[dict]:
         m = NUM_DATE.search(line) or MON_DATE.search(line)
         if not m:
             continue
-        due = _clamp_year(_parse(m.group(0)), base_year)
+        due = _resolve(m.group(0), base_year, season)
         if not due:
             continue
         tm = TIME_RE.search(line)
@@ -258,6 +294,7 @@ def parse(extraction: dict, use_llm: bool = True) -> dict:
     tables = extraction.get("tables", []) or []
     term = find_term(text)
     base_year = _base_year(text, term)
+    season = _season(term)
 
     events: list[dict] = []
     method = "table"
@@ -268,7 +305,7 @@ def parse(extraction: dict, use_llm: bool = True) -> dict:
             from llm import smart_available, extract_events_llm
 
             if smart_available():
-                llm_events = extract_events_llm(text, term, base_year)
+                llm_events = extract_events_llm(text, term, base_year or datetime.now().year)
                 if llm_events:
                     events = llm_events
                     method = "llm"
@@ -277,12 +314,12 @@ def parse(extraction: dict, use_llm: bool = True) -> dict:
 
     # 2) table path
     if not events and tables:
-        events = _events_from_tables(tables, base_year)
+        events = _events_from_tables(tables, base_year, season)
         method = "table"
 
     # 3) flat-text fallback
     if not events:
-        events = _events_from_text(text, base_year)
+        events = _events_from_text(text, base_year, season)
         method = "text"
 
     events = _dedupe(events)

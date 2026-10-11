@@ -58,3 +58,9 @@ test('reset tokens carry the version they were issued at', () => {
   assert.deepEqual(verifyPurposeTokenDetails(t, 'reset'), { uid: 'user_123', tv: 3 })
   assert.equal(verifyPurposeTokenDetails(t, 'verify'), null)
 })
+
+test('session tokens are never accepted from the URL query string', () => {
+  const req = { headers: {}, query: { token: signToken('user_123') } }
+  attachUser(req, {}, () => {})
+  assert.equal(req.userId, undefined)
+})

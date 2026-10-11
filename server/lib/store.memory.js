@@ -5,6 +5,7 @@
  * for production.
  */
 import crypto from 'crypto'
+import { wallClockDate } from './dates.js'
 
 const users = new Map() // userId -> user
 const usersByEmail = new Map() // email -> userId
@@ -76,6 +77,23 @@ export async function setEmailVerified(userId, val = true) {
   if (u) u.emailVerified = !!val
 }
 
+// --- calendar feed token ---
+export async function getFeedToken(userId) {
+  const u = users.get(userId)
+  if (!u) return null
+  return u.feedToken || rotateFeedToken(userId)
+}
+export async function rotateFeedToken(userId) {
+  const u = users.get(userId)
+  if (!u) return null
+  u.feedToken = crypto.randomBytes(24).toString('hex')
+  return u.feedToken
+}
+export async function findUserIdByFeedToken(token) {
+  for (const u of users.values()) if (u.feedToken && u.feedToken === String(token)) return u._id
+  return null
+}
+
 // --- courses ---
 export async function createCourse(userId, { name = 'Untitled Course', term = '', file } = {}) {
   const _id = uid('course')
@@ -113,7 +131,7 @@ export async function addEvents(userId, courseId, list = []) {
       courseName: e.course || course.name || '',
       type: e.type || 'other',
       label: e.label || '',
-      due: e.due ? new Date(e.due) : new Date(),
+      due: e.due ? wallClockDate(e.due) : new Date(),
       allDay: !!e.allDay,
       approved: false,
       committed: false, // awaits approval
@@ -263,9 +281,33 @@ export async function allEventsForUser(userId) {
 
 export async function commitCourse(userId, courseId) {
   for (const e of events.values()) {
-    if (e.user === userId && e.course === courseId) e.committed = true
+    if (e.user === userId && e.course === courseId) {
+      e.committed = true
+      e.approved = true
+    }
   }
   return eventsForCourse(userId, courseId)
+}
+export async function pendingCourses(userId) {
+  const counts = new Map()
+  for (const e of events.values()) {
+    if (e.user === userId && e.committed === false) counts.set(e.course, (counts.get(e.course) || 0) + 1)
+  }
+  return [...counts.entries()]
+    .map(([courseId, count]) => ({ courseId, name: courses.get(courseId)?.name || 'Course', count }))
+    .filter((c) => courses.get(c.courseId)?.user === userId)
+}
+export async function discardPending(userId, courseId) {
+  let n = 0
+  for (const [id, e] of events) {
+    if (e.user === userId && e.course === courseId && e.committed === false) {
+      events.delete(id)
+      n++
+    }
+  }
+  const c = courses.get(courseId)
+  if (c && c.user === userId && ![...events.values()].some((e) => e.course === courseId)) courses.delete(courseId)
+  return n
 }
 export async function deleteEvent(userId, eventId) {
   const e = events.get(eventId)

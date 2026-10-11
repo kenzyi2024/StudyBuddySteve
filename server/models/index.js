@@ -20,6 +20,9 @@ const UserSchema = new Schema(
     passwordHash: { type: String, required: true },
     // Bumped on password change; sessions signed with an older version are rejected.
     tokenVersion: { type: Number, default: 0 },
+    // Secret for the read-only calendar subscription feed (/api/feed/<token>.ics).
+    // Separate from login sessions so sharing a feed URL never grants account access.
+    feedToken: { type: String, unique: true, sparse: true },
     emailVerified: { type: Boolean, default: false },
     // OAuth tokens for calendar providers (stored per-user).
     google: TokenSchema,

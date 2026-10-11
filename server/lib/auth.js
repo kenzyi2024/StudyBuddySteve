@@ -7,8 +7,9 @@
  *      blocking, so it's what the deployed cross-domain frontend uses.
  *   2. httpOnly cookie                — convenient for same-origin/local dev.
  *
- * A token is also accepted as ?token= for endpoints reached by top-level
- * navigation or plain links (OAuth start, .ics download) that can't set headers.
+ * Tokens are never accepted in the URL: query strings end up in logs, browser
+ * history, and (for calendar subscriptions) third-party servers. Calendar
+ * subscriptions use a separate read-only feed token instead (see /api/feed).
  */
 import bcrypt from 'bcryptjs'
 import jwt from 'jsonwebtoken'
@@ -80,7 +81,6 @@ function tokenFromRequest(req) {
   const auth = req.headers?.authorization
   if (auth && auth.startsWith('Bearer ')) return auth.slice(7)
   if (req.cookies?.[COOKIE]) return req.cookies[COOKIE]
-  if (req.query?.token) return String(req.query.token)
   return null
 }
 
@@ -98,7 +98,7 @@ export function verifySessionToken(token) {
 }
 
 // Populate req.userId / req.tokenVersion if a valid session token is present
-// (header, cookie, or query). The token version is checked against the user
+// (Authorization header or cookie). The token version is checked against the user
 // record by the gateway (see checkTokenVersion in index.js).
 export function attachUser(req, _res, next) {
   const token = tokenFromRequest(req)

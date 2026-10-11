@@ -4,6 +4,14 @@ Study Buddy Steve syncs approved events to **Google Calendar** and **Outlook**
 using OAuth 2.0. Both are free to set up. You only need the provider(s) you
 actually want; the app hides buttons for providers with no credentials.
 
+> **Status:** the one-time OAuth push currently has **no button in the UI**.
+> It was removed from the review screen because it placed deadlines at the
+> wrong time outside UTC and created duplicates on every sync (see `AUDIT.md`,
+> BUG-10/11). Students sync through the private, read-only **subscription
+> feed** instead (My Semester → Reminders → Calendar app), which needs no
+> credentials. The gateway routes (`POST /api/oauth/:provider/start`, callback,
+> `POST /api/courses/:id/sync/:provider`) still work, for when the push is fixed.
+
 Put the values you collect into your `.env` (copy from `.env.example`). After
 editing `.env`, restart the gateway (`cd server && npm run dev`).
 

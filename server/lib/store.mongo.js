@@ -5,8 +5,10 @@
  * Returned objects are plain (lean) with an `id` string field, matching the
  * shape the frontend and .ics/sync code expect.
  */
+import crypto from 'crypto'
 import { User, Course, Event } from '../models/index.js'
 import { EVENT_TYPES } from './validate.js'
+import { wallClockDate } from './dates.js'
 
 // Ids from the URL that aren't ObjectIds would throw a CastError (→ 500);
 // treat them as "not found" instead.
@@ -67,6 +69,24 @@ export async function setEmailVerified(userId, val = true) {
   await User.updateOne({ _id: userId }, { emailVerified: !!val })
 }
 
+// --- calendar feed token ---
+const newFeedToken = () => crypto.randomBytes(24).toString('hex')
+export async function getFeedToken(userId) {
+  const u = await User.findById(userId).select('feedToken')
+  if (!u) return null
+  if (u.feedToken) return u.feedToken
+  return rotateFeedToken(userId)
+}
+export async function rotateFeedToken(userId) {
+  const feedToken = newFeedToken()
+  await User.updateOne({ _id: userId }, { feedToken })
+  return feedToken
+}
+export async function findUserIdByFeedToken(token) {
+  const u = await User.findOne({ feedToken: String(token) }).select('_id')
+  return u ? String(u._id) : null
+}
+
 // --- courses ---
 export async function createCourse(userId, { name = 'Untitled Course', term = '', file } = {}) {
   const c = await Course.create({ user: userId, name, term, file: file || null, parseStatus: 'queued' })
@@ -103,7 +123,7 @@ export async function addEvents(userId, courseId, list = []) {
     courseName: e.course || course.name || '',
     type: KNOWN_TYPES.has(e.type) ? e.type : 'other',
     label: e.label || '',
-    due: e.due ? new Date(e.due) : new Date(),
+    due: e.due ? wallClockDate(e.due) : new Date(),
     allDay: !!e.allDay,
     approved: false,
     committed: false, // awaits the student's approval before hitting the calendar
@@ -239,10 +259,33 @@ export async function allEventsForUser(userId) {
   return list.map(eventOut)
 }
 
-// Approve a course's parsed events → they now appear in the calendar.
+// Approve a course's parsed events → they now appear in the calendar. Whatever
+// the student kept in review is approved (they delete what they don't want),
+// so committed and approved stay in step for calendar sync.
 export async function commitCourse(userId, courseId) {
-  await Event.updateMany({ course: courseId, user: userId }, { committed: true })
+  if (!isId(courseId)) return []
+  await Event.updateMany({ course: courseId, user: userId }, { committed: true, approved: true })
   return eventsForCourse(userId, courseId)
+}
+
+// Courses with parsed events still awaiting review → [{ courseId, name, count }].
+export async function pendingCourses(userId) {
+  const rows = await Event.find({ user: userId, committed: false }).select('course')
+  const counts = new Map()
+  for (const r of rows) counts.set(String(r.course), (counts.get(String(r.course)) || 0) + 1)
+  if (!counts.size) return []
+  const courses = await Course.find({ _id: { $in: [...counts.keys()] }, user: userId }).select('name')
+  return courses.map((c) => ({ courseId: String(c._id), name: c.name, count: counts.get(String(c._id)) }))
+}
+
+// Throw away a course's un-reviewed events (and the course, if nothing else is in it).
+export async function discardPending(userId, courseId) {
+  if (!isId(courseId)) return 0
+  const r = await Event.deleteMany({ course: courseId, user: userId, committed: false })
+  if (!(await Event.exists({ course: courseId, user: userId }))) {
+    await Course.deleteOne({ _id: courseId, user: userId })
+  }
+  return r.deletedCount
 }
 
 export async function deleteEvent(userId, eventId) {

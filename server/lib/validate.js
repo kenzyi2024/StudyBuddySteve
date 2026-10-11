@@ -1,3 +1,5 @@
+import { wallClockDate } from './dates.js'
+
 /**
  * Request validation for event edits. Rejects bad input with a 400 instead of
  * letting it reach the store (an invalid date used to 500, and in the memory
@@ -30,7 +32,7 @@ export function validateEventPatch(body = {}) {
   }
 
   if ('due' in b) {
-    const d = typeof b.due === 'string' || typeof b.due === 'number' ? new Date(b.due) : null
+    const d = typeof b.due === 'string' || typeof b.due === 'number' ? wallClockDate(b.due) : null
     if (!d || Number.isNaN(d.getTime())) return { error: 'due must be a valid date' }
     patch.due = d.toISOString()
   }

@@ -6,6 +6,7 @@
  */
 import crypto from 'crypto'
 import { wallClockDate } from './dates.js'
+import { TZ_SLACK_HOURS } from './reminders.js'
 
 const users = new Map() // userId -> user
 const usersByEmail = new Map() // email -> userId
@@ -182,6 +183,10 @@ export async function importEvents(userId, courseId, list = []) {
   return { imported, skipped }
 }
 
+export async function setTimezone(userId, tz) {
+  const u = users.get(userId)
+  if (u) u.tz = tz
+}
 export async function setCanvasFeed(userId, url, tz) {
   const u = users.get(userId)
   if (u) {
@@ -344,9 +349,11 @@ export async function setReminderPrefs(userId, { phone, smsEnabled, emailReminde
 }
 
 // --- reminders ---
+// Over-fetches by TZ_SLACK_HOURS each side: dues are wall-clock values, so the
+// caller filters per student timezone (see lib/reminders.js).
 export async function dueSoonUnreminded(hours = 24) {
-  const now = Date.now()
-  const until = now + hours * 3600 * 1000
+  const now = Date.now() - TZ_SLACK_HOURS * 3600 * 1000
+  const until = Date.now() + (hours + TZ_SLACK_HOURS) * 3600 * 1000
   return [...events.values()]
     .filter((e) => {
       const t = new Date(e.due).getTime()

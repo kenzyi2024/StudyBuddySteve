@@ -300,12 +300,16 @@ export default function SemesterHome({
   const TabBtn = ({ id, icon: Icon, label }: { id: View; icon: typeof CalendarDays; label: string }) => {
     const active = view === id
     return (
+      // Phones: an even 4-up grid, icon over a compact label. sm+: inline row.
       <button
         onClick={() => setView(id)}
-        className={`flex items-center gap-2 px-4 py-2 border-3 border-ink font-pixel text-[11px] uppercase transition-colors
+        aria-pressed={active}
+        className={`flex flex-col sm:flex-row items-center justify-center gap-1 sm:gap-2 px-1 sm:px-4 py-2
+          border-3 border-ink uppercase transition-colors
           ${active ? 'bg-magenta text-ink shadow-chunk' : 'bg-void text-beige/70 hover:bg-dusk'}`}
       >
-        <Icon size={15} /> {label}
+        <Icon size={15} />
+        <span className="font-mono text-base leading-none sm:font-pixel sm:text-[11px]">{label}</span>
       </button>
     )
   }
@@ -327,31 +331,29 @@ export default function SemesterHome({
     <div className="min-h-screen">
       {/* header */}
       <header className="crt relative border-b-5 border-ink bg-dusk/80 backdrop-blur">
-        <div className="max-w-6xl mx-auto px-5 py-3 flex items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <div className="w-10">
+        <div className="max-w-6xl mx-auto px-4 sm:px-5 py-3 flex items-center justify-between gap-3">
+          <div className="flex items-center gap-3 min-w-0">
+            <div className="w-10 shrink-0 hidden sm:block">
               <Steve mood="happy" size={40} />
             </div>
-            <div>
+            <div className="min-w-0">
               <span className="font-pixel text-xs sm:text-sm text-beige block leading-tight">
                 MY <span className="text-cyan">SEMESTER</span>
               </span>
-              <span className="font-mono text-base text-lime">
+              <span className="font-mono text-base text-lime block truncate">
                 Welcome back, {user?.name || user?.email?.split('@')[0] || 'student'}!
               </span>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <RetroButton color="grape" size="sm" onClick={() => setView('plan')}>
-              <Coffee size={15} /> Study Plan
+          {/* labels collapse to icons on phones so all actions stay on screen */}
+          <div className="flex items-center gap-2 shrink-0">
+            <RetroButton color="cyan" size="sm" onClick={() => setImportOpen(true)} aria-label="Import a calendar">
+              <Upload size={15} /> <span className="hidden sm:inline">Import</span>
             </RetroButton>
-            <RetroButton color="cyan" size="sm" onClick={() => setImportOpen(true)}>
-              <Upload size={15} /> Import
+            <RetroButton color="lime" size="sm" onClick={onUploadMore} aria-label="Add a syllabus">
+              <UploadCloud size={15} /> <span className="hidden sm:inline">Add Syllabus</span>
             </RetroButton>
-            <RetroButton color="lime" size="sm" onClick={onUploadMore}>
-              <UploadCloud size={15} /> Add Syllabus
-            </RetroButton>
-            <RetroButton color="magenta" size="sm" onClick={onLogout}>
+            <RetroButton color="magenta" size="sm" onClick={onLogout} aria-label="Log out">
               <LogOut size={14} />
             </RetroButton>
           </div>
@@ -393,7 +395,7 @@ export default function SemesterHome({
 
         {/* tabs */}
         <div className="flex items-center justify-between gap-3 flex-wrap">
-          <div className="flex gap-2">
+          <div className="grid grid-cols-4 gap-2 w-full sm:flex sm:w-auto">
             <TabBtn id="overview" icon={LayoutDashboard} label="Overview" />
             <TabBtn id="calendar" icon={CalendarDays} label="Calendar" />
             <TabBtn id="tasks" icon={ListChecks} label="Tasks" />

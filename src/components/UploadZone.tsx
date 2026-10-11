@@ -8,6 +8,7 @@ import { uploadSyllabus, pollJob } from '../lib/api'
 import type { EventItem } from '../types'
 
 const ACCEPTED = ['.pdf', '.docx', '.doc', '.png', '.jpg', '.jpeg']
+const MAX_BYTES = 20 * 1024 * 1024 // matches the gateway's upload limit
 
 interface Phase {
   key: string
@@ -33,8 +34,19 @@ function iconFor(name: string) {
   return FileType2
 }
 
+/** One successfully parsed syllabus (a course awaiting review). */
+export interface ParsedSyllabus {
+  courseId: string
+  events: EventItem[]
+  fileName: string
+}
+
 interface UploadZoneProps {
-  onComplete?: (result: { courseId: string; events: EventItem[] }) => void
+  /**
+   * Called once with every file that parsed, plus messages for any that failed
+   * (so the next screen can still report them).
+   */
+  onComplete?: (results: ParsedSyllabus[], failures: string[]) => void
   authed?: boolean
   onNeedAuth?: () => void
 }
@@ -45,13 +57,21 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }: U
   const [files, setFiles] = useState<File[]>([])
   const [phaseIndex, setPhaseIndex] = useState(-1) // -1 = idle
   const [error, setError] = useState<string | null>(null)
+  const [notice, setNotice] = useState<string | null>(null) // skipped files
+  const [progress, setProgress] = useState<{ index: number; total: number; name: string } | null>(null)
   const processing = phaseIndex >= 0
 
   const addFiles = useCallback((list: FileList | null) => {
     if (!list) return
-    const incoming = Array.from(list).filter((f) =>
-      ACCEPTED.some((ext) => f.name.toLowerCase().endsWith(ext)),
-    )
+    const all = Array.from(list)
+    const wrongType = all.filter((f) => !ACCEPTED.some((ext) => f.name.toLowerCase().endsWith(ext)))
+    const tooBig = all.filter((f) => !wrongType.includes(f) && f.size > MAX_BYTES)
+    const incoming = all.filter((f) => !wrongType.includes(f) && !tooBig.includes(f))
+    const skipped = [
+      ...wrongType.map((f) => `${f.name} (not a PDF, DOCX, or image)`),
+      ...tooBig.map((f) => `${f.name} (over 20 MB)`),
+    ]
+    setNotice(skipped.length ? `Skipped ${skipped.join(', ')}` : null)
     if (incoming.length) setFiles((prev) => [...prev, ...incoming])
   }, [])
 
@@ -64,9 +84,9 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }: U
     [addFiles],
   )
 
-  // Live path: upload the first file, poll the job, drive Steve from real
-  // backend status, then hand the REAL parsed events up. On any failure we show
-  // an honest error — we never fabricate sample data.
+  // Upload + parse each queued file in turn, driving Steve from the real backend
+  // status. A file that fails doesn't stop the rest; every success is handed up
+  // (each becomes a syllabus to review). We never fabricate sample data.
   const startProcessing = useCallback(async () => {
     if (!files.length) return
     // Parsing persists to the user's account — require login first.
@@ -75,35 +95,54 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }: U
       return
     }
     setError(null)
-    setPhaseIndex(0)
-    try {
-      const { jobId } = await uploadSyllabus(files[0])
-      const job = await pollJob(jobId, {
-        onPhase: (status) => setPhaseIndex(PHASE_INDEX[status] ?? 0),
-      })
-      if (job.status === 'error') {
-        setPhaseIndex(-1)
-        setError(
-          "Steve couldn't read that file. Make sure it's a PDF/DOCX with selectable text (not a photo/scan), then try again.",
+    setNotice(null)
+    const results: ParsedSyllabus[] = []
+    const failed: string[] = []
+    const failedFiles: File[] = []
+
+    for (const [index, file] of files.entries()) {
+      setProgress({ index: index + 1, total: files.length, name: file.name })
+      setPhaseIndex(0)
+      try {
+        const { jobId } = await uploadSyllabus(file)
+        const job = await pollJob(jobId, {
+          onPhase: (status) => setPhaseIndex(PHASE_INDEX[status] ?? 0),
+        })
+        if (job.status === 'error') {
+          failed.push(`${file.name}: Steve couldn’t read it`)
+          failedFiles.push(file)
+        } else results.push({ courseId: job.jobId, events: job.events || [], fileName: file.name })
+      } catch (e) {
+        const err = e as Error & { status?: number }
+        if (err?.status === 401) {
+          setPhaseIndex(-1)
+          setProgress(null)
+          onNeedAuth?.()
+          return
+        }
+        failed.push(
+          err?.status == null
+            ? `${file.name}: couldn’t reach Steve’s server (or it timed out)`
+            : `${file.name}: ${err.message}`,
         )
-        return
+        failedFiles.push(file)
       }
-      const events = job.events || []
-      // Real result — even if empty. Hand it up; the dashboard shows the truth.
-      setTimeout(() => onComplete?.({ courseId: job.jobId, events }), 700)
-    } catch (e) {
-      const err = e as Error & { status?: number }
-      setPhaseIndex(-1)
-      if (err?.status === 401) {
-        onNeedAuth?.()
-        return
-      }
+    }
+
+    setProgress(null)
+    if (failed.length) {
       setError(
-        err?.status == null
-          ? "Can't reach Steve's server. Check your connection — or if you just deployed, that the API URL and CORS are set."
-          : `Upload failed (${err.status}): ${err.message}`,
+        `${failed.join(' · ')}. Use a PDF/DOCX with selectable text or a clear photo, then try again.`,
       )
     }
+    // Keep only the files that failed queued, so "Parse" retries just those.
+    setFiles(failedFiles)
+    if (!results.length) {
+      setPhaseIndex(-1)
+      return
+    }
+    // Real results — even if empty. The review screen shows the truth.
+    setTimeout(() => onComplete?.(results, failed), 700)
   }, [files, authed, onNeedAuth, onComplete])
 
   const phase = PHASES[phaseIndex]
@@ -159,7 +198,9 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }: U
               />
             </div>
             <p className="font-mono text-lg text-crt mt-3 caret">
-              steve.exe running
+              {progress && progress.total > 1
+                ? `file ${progress.index} of ${progress.total} · ${progress.name}`
+                : 'steve.exe running'}
             </p>
           </motion.div>
         ) : (
@@ -213,9 +254,18 @@ export default function UploadZone({ onComplete, authed = false, onNeedAuth }: U
                 multiple
                 accept={ACCEPTED.join(',')}
                 className="hidden"
-                onChange={(e) => addFiles(e.target.files)}
+                onChange={(e) => {
+                  addFiles(e.target.files)
+                  e.target.value = '' // so picking the same file again still fires
+                }}
               />
             </motion.div>
+
+            {notice && (
+              <p className="mt-4 font-mono text-lg text-amber" role="status">
+                ▸ {notice}
+              </p>
+            )}
 
             {/* error banner — honest failure, never fake data */}
             <AnimatePresence>

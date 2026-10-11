@@ -138,7 +138,8 @@ export default function CalendarView({ events, onEdit, onReschedule }: CalendarV
           <ModeBtn id="week" label="Week" />
           <ModeBtn id="day" label="Day" />
         </div>
-        <div className="flex items-center gap-2">
+        {/* full-width on phones so the title can shrink instead of overflowing */}
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <RetroButton
             color="lime"
             size="sm"
@@ -149,13 +150,16 @@ export default function CalendarView({ events, onEdit, onReschedule }: CalendarV
           >
             Today
           </RetroButton>
-          <RetroButton color="cyan" size="sm" onClick={() => step(-1)}>
+          <RetroButton color="cyan" size="sm" onClick={() => step(-1)} aria-label="Previous">
             <ChevronLeft size={16} />
           </RetroButton>
-          <h3 className="font-pixel text-xs sm:text-sm text-beige text-shadow-chunk text-center min-w-[120px]">
+          <h3
+            className="font-pixel text-[10px] sm:text-sm text-beige text-shadow-chunk text-center
+              flex-1 min-w-0 sm:flex-none sm:min-w-[120px] leading-relaxed"
+          >
             {title}
           </h3>
-          <RetroButton color="cyan" size="sm" onClick={() => step(1)}>
+          <RetroButton color="cyan" size="sm" onClick={() => step(1)} aria-label="Next">
             <ChevronRight size={16} />
           </RetroButton>
         </div>

@@ -36,20 +36,26 @@ export default function TaskRow({ e, courseColorName, courseHex, onToggleDone, o
         {e.done && <Check size={16} className="text-ink" strokeWidth={3} />}
       </button>
       <button onClick={() => onEdit(e)} className="flex-1 min-w-0 text-left">
-        <div className={`font-body font-bold text-beige truncate ${e.done ? 'line-through' : ''}`}>
+        <div
+          className={`font-body font-bold text-beige break-words line-clamp-2 sm:line-clamp-none sm:truncate
+            ${e.done ? 'line-through' : ''}`}
+        >
           {e.title}
         </div>
-        <div className="flex items-center gap-3 font-mono text-base text-beige/60 mt-0.5">
-          {e.course && <span className={`text-${courseColorName}`}>{e.course}</span>}
-          <span className="flex items-center gap-1">
+        <div className="flex items-center gap-x-3 font-mono text-base text-beige/60 mt-0.5 flex-wrap">
+          {e.course && <span className={`text-${courseColorName} whitespace-nowrap`}>{e.course}</span>}
+          <span className="flex items-center gap-1 whitespace-nowrap">
             <Clock size={12} /> {fmtDateLong(e.due).replace(/^.*· /, '')} · {fmtTime(e.due, e.allDay)}
           </span>
         </div>
       </button>
-      <span className={`font-mono text-base whitespace-nowrap ${urgencyColor(days, e.done)}`}>
-        {e.done ? 'done' : countdownLabel(days)}
-      </span>
-      <TypeBadge type={e.type} label={e.label} size="sm" />
+      {/* stacked on phones so the title keeps most of the row */}
+      <div className="flex flex-col items-end gap-1 sm:flex-row sm:items-center sm:gap-3 shrink-0">
+        <span className={`font-mono text-base whitespace-nowrap ${urgencyColor(days, e.done)}`}>
+          {e.done ? 'done' : countdownLabel(days)}
+        </span>
+        <TypeBadge type={e.type} label={e.label} size="sm" compact />
+      </div>
       <button
         onClick={() => onDelete(e.id)}
         aria-label="Delete task"

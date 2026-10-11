@@ -9,6 +9,7 @@ import crypto from 'crypto'
 import { User, Course, Event } from '../models/index.js'
 import { EVENT_TYPES } from './validate.js'
 import { wallClockDate } from './dates.js'
+import { TZ_SLACK_HOURS } from './reminders.js'
 
 // Ids from the URL that aren't ObjectIds would throw a CastError (→ 500);
 // treat them as "not found" instead.
@@ -198,6 +199,10 @@ export async function addPlanEvents(userId, list = []) {
   return docs.length
 }
 
+export async function setTimezone(userId, tz) {
+  await User.updateOne({ _id: userId }, { tz })
+}
+
 export async function setCanvasFeed(userId, url, tz) {
   const patch = { canvasFeedUrl: url }
   if (tz) patch.tz = tz
@@ -326,9 +331,11 @@ export async function setReminderPrefs(userId, { phone, smsEnabled, emailReminde
 // --- reminders ---
 // Events due within `hours`, not done, not yet reminded. Returns raw rows with
 // userId so the cron can group + push.
+// Over-fetches by TZ_SLACK_HOURS each side: dues are wall-clock values, so the
+// caller filters per student timezone (see lib/reminders.js).
 export async function dueSoonUnreminded(hours = 24) {
-  const now = new Date()
-  const until = new Date(now.getTime() + hours * 3600 * 1000)
+  const now = new Date(Date.now() - TZ_SLACK_HOURS * 3600 * 1000)
+  const until = new Date(Date.now() + (hours + TZ_SLACK_HOURS) * 3600 * 1000)
   const list = await Event.find({
     done: false,
     reminded: { $ne: true },

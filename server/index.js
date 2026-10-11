@@ -39,6 +39,8 @@ import { generatePlan, DEFAULT_PREFS } from './lib/studyPlanner.js'
 import { initMonitoring, captureError } from './lib/monitoring.js'
 import { productionConfigErrors } from './lib/config.js'
 import { validateEventPatch } from './lib/validate.js'
+import { isValidTimeZone } from './lib/dates.js'
+import { dueWithinLead } from './lib/reminders.js'
 
 dotenv.config()
 
@@ -148,7 +150,17 @@ const publicUser = (u) => ({
   reminderLead: u.reminderLead || 24,
   emailVerified: !!u.emailVerified,
   studyPrefs: u.studyPrefs || null,
+  tz: u.tz || null,
 })
+
+// Remember the student's IANA timezone (sent by the browser) so reminders fire
+// at the right real-world time. Invalid values are ignored.
+async function rememberTimezone(user, tz) {
+  if (!user || !isValidTimeZone(tz) || user.tz === tz) return user
+  await store.setTimezone(user._id, tz)
+  user.tz = tz
+  return user
+}
 
 // Fire-and-forget: email a verification link (if email is configured).
 function sendVerifyEmail(user) {
@@ -173,7 +185,7 @@ async function rebuildStudyPlan(userId) {
 }
 
 app.post('/api/auth/register', async (req, res) => {
-  const { email, password, name } = req.body || {}
+  const { email, password, name, tz } = req.body || {}
   if (!email || !password || password.length < 8) {
     return res.status(400).json({ error: 'Email and a password of 8+ characters are required' })
   }
@@ -181,6 +193,7 @@ app.post('/api/auth/register', async (req, res) => {
     return res.status(409).json({ error: 'An account with that email already exists' })
   }
   const user = await store.createUser({ email, name, passwordHash: await hashPassword(password) })
+  await rememberTimezone(user, tz)
   sendVerifyEmail(user)
   const token = issueSession(res, user._id, user.tokenVersion || 0)
   res.status(201).json({ user: publicUser(user), token })
@@ -233,11 +246,12 @@ app.post('/api/auth/resend-verification', requireAuth, async (req, res) => {
 })
 
 app.post('/api/auth/login', async (req, res) => {
-  const { email, password } = req.body || {}
+  const { email, password, tz } = req.body || {}
   const user = await store.findUserByEmail(email || '')
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
+  await rememberTimezone(user, tz)
   const token = issueSession(res, user._id, user.tokenVersion || 0)
   res.json({ user: publicUser(user), token })
 })
@@ -245,6 +259,15 @@ app.post('/api/auth/login', async (req, res) => {
 app.post('/api/auth/logout', (_req, res) => {
   clearSession(res)
   res.json({ ok: true })
+})
+
+// Update the timezone (e.g. a returning student whose session predates this,
+// or who moved / is travelling).
+app.post('/api/me/timezone', requireAuth, async (req, res) => {
+  const tz = req.body?.tz
+  if (!isValidTimeZone(tz)) return res.status(400).json({ error: 'Unknown timezone' })
+  await store.setTimezone(req.userId, tz)
+  res.json({ tz })
 })
 
 app.get('/api/auth/me', async (req, res) => {
@@ -556,8 +579,9 @@ app.post('/api/cron/send-reminders', async (req, res) => {
   for (const [userId, all] of Object.entries(byUser)) {
     const user = await store.getUserById(userId)
     const leadHours = user?.reminderLead || 24
-    // only items now inside this user's lead window
-    const items = all.filter((i) => (new Date(i.due).getTime() - now) / 3600000 <= leadHours)
+    // only items whose real due moment (in the student's timezone) is inside
+    // their lead window
+    const items = dueWithinLead(all, { tz: user?.tz, leadHours, now })
     if (!items.length) continue
 
     const title = items.length === 1 ? '⏰ 1 deadline coming up' : `⏰ ${items.length} deadlines coming up`

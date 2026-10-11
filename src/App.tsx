@@ -4,6 +4,7 @@ import { Calendar, ScanLine, Sparkles, Github, LogOut } from 'lucide-react'
 import Steve from './components/Steve'
 import RetroButton from './components/RetroButton'
 import UploadZone from './components/UploadZone'
+import type { ParsedSyllabus } from './components/UploadZone'
 import PixelWipe from './components/PixelWipe'
 import Dashboard from './components/dashboard/Dashboard'
 import SemesterHome from './components/home/SemesterHome'
@@ -18,6 +19,8 @@ import {
   getCourseEvents,
   verifyEmail,
   resendVerification,
+  saveTimezone,
+  TZ,
 } from './lib/api'
 import { useToast } from './lib/toast'
 import type { EventItem, User } from './types'
@@ -81,6 +84,8 @@ export default function App() {
     me()
       .then(async (r) => {
         setUser(r.user)
+        // Keep the reminder timezone current for already-signed-in students.
+        if (r.user && r.user.tz !== TZ) saveTimezone(TZ).catch(() => {})
         if (r.user && (await hasSemester())) setScreen('home')
       })
       .catch(() => {})
@@ -126,9 +131,18 @@ export default function App() {
     window.setTimeout(() => setScreen(next), 520)
   }
 
-  const handleParsed = (result: { courseId: string; events: EventItem[] }) => {
-    setParsed(result)
-    transitionTo('dashboard')
+  // One syllabus → straight to its review. Several → My Semester, where each
+  // waits in the "ready for review" list.
+  const handleParsed = async (results: ParsedSyllabus[], failures: string[]) => {
+    if (failures.length) toast.error(`Some files couldn’t be read — ${failures.join(' · ')}`)
+    if (results.length === 1) {
+      setParsed({ courseId: results[0].courseId, events: results[0].events })
+      transitionTo('dashboard')
+      return
+    }
+    toast.ok(`Steve read ${results.length} syllabi — review each one below.`)
+    await loadHomeEvents()
+    transitionTo('home')
   }
 
   // From the review dashboard back to the saved semester home (refresh events).

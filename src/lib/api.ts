@@ -63,17 +63,25 @@ async function json(res: Response): Promise<Json> {
 
 const jsonHeaders = { 'Content-Type': 'application/json' }
 
+// The browser's IANA timezone. Sent at sign-in so reminders fire at the right
+// real-world time (deadlines are stored as wall-clock times).
+export const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
+
 // --- auth ---
 export async function me(): Promise<Json> {
   return json(await req('/auth/me'))
 }
 export async function register(body: { email: string; password: string; name?: string }): Promise<Json> {
-  const r = await json(await req('/auth/register', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }))
+  const r = await json(
+    await req('/auth/register', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ...body, tz: TZ }) }),
+  )
   if (r.token) setToken(r.token)
   return r
 }
 export async function login(body: { email: string; password: string }): Promise<Json> {
-  const r = await json(await req('/auth/login', { method: 'POST', headers: jsonHeaders, body: JSON.stringify(body) }))
+  const r = await json(
+    await req('/auth/login', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ ...body, tz: TZ }) }),
+  )
   if (r.token) setToken(r.token)
   return r
 }
@@ -96,6 +104,9 @@ export async function resetPassword(token: string, password: string): Promise<Js
 }
 export async function verifyEmail(token: string): Promise<Json> {
   return json(await req('/auth/verify', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ token }) }))
+}
+export async function saveTimezone(tz: string): Promise<Json> {
+  return json(await req('/me/timezone', { method: 'POST', headers: jsonHeaders, body: JSON.stringify({ tz }) }))
 }
 export async function resendVerification(): Promise<Json> {
   return json(await req('/auth/resend-verification', { method: 'POST' }))
@@ -160,7 +171,6 @@ export async function discardPendingReview(courseId: string): Promise<Json> {
 }
 
 // --- import from another calendar ---
-const TZ = Intl.DateTimeFormat().resolvedOptions().timeZone || 'UTC'
 export async function importIcsFile(file: File): Promise<Json> {
   const form = new FormData()
   form.append('file', file)

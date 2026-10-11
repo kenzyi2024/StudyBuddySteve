@@ -46,6 +46,8 @@ export interface User {
   reminderLead?: number
   emailVerified?: boolean
   studyPrefs?: StudyPrefs | null
+  /** IANA timezone used to time reminders, e.g. "America/New_York". */
+  tz?: string | null
 }
 
 /** A parsed syllabus whose events haven't been added to the calendar yet. */

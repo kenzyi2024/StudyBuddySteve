@@ -21,15 +21,19 @@ const ICONS: Record<string, typeof Star> = {
 }
 
 /** Small chunky pill showing an event's type with its retro color + icon.
- *  For the "other" type, a custom `label` (if provided) replaces "Other". */
+ *  For the "other" type, a custom `label` (if provided) replaces "Other".
+ *  `compact`: on phones show just the colored icon (the label stays readable
+ *  by screen readers); full pill from `sm` up. */
 export default function TypeBadge({
   type,
   label,
   size = 'md',
+  compact = false,
 }: {
   type: EventType
   label?: string
   size?: 'sm' | 'md'
+  compact?: boolean
 }) {
   const meta = typeMeta(type)
   const Icon = ICONS[meta.icon] || Star
@@ -43,7 +47,7 @@ export default function TypeBadge({
       title={text}
     >
       <Icon size={iconSize} strokeWidth={2.5} />
-      {text}
+      <span className={compact ? 'sr-only sm:not-sr-only' : undefined}>{text}</span>
     </span>
   )
 }

@@ -81,7 +81,9 @@ export default function ListView({ events, onEdit, onDelete }: ListViewProps) {
                     {/* main */}
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <span className="font-body font-bold text-beige truncate">{e.title}</span>
+                        <span className="font-body font-bold text-beige break-words sm:truncate min-w-0">
+                          {e.title}
+                        </span>
                         {lowConf && (
                           <span
                             className="inline-flex items-center gap-1 text-amber font-mono text-base"
@@ -91,15 +93,21 @@ export default function ListView({ events, onEdit, onDelete }: ListViewProps) {
                           </span>
                         )}
                       </div>
-                      <div className="flex items-center gap-3 mt-1 font-mono text-lg text-beige/60">
-                        <span className="text-cyan">{e.course}</span>
-                        <span className="flex items-center gap-1">
+                      <div className="flex items-center gap-x-3 gap-y-1 mt-1 font-mono text-lg text-beige/60 flex-wrap">
+                        <span className="text-cyan whitespace-nowrap">{e.course}</span>
+                        <span className="flex items-center gap-1 whitespace-nowrap">
                           <Clock size={13} /> {fmtTime(e.due, e.allDay)}
+                        </span>
+                        {/* phones: the type badge sits here so the title gets the width */}
+                        <span className="sm:hidden">
+                          <TypeBadge type={e.type} label={e.label} size="sm" />
                         </span>
                       </div>
                     </div>
 
-                    <TypeBadge type={e.type} label={e.label} size="sm" />
+                    <span className="hidden sm:inline-flex">
+                      <TypeBadge type={e.type} label={e.label} size="sm" />
+                    </span>
 
                     <button
                       onClick={() => onEdit(e)}

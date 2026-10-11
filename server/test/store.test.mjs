@@ -49,3 +49,11 @@ test('disconnecting Canvas removes it from the sync list', async () => {
   await store.clearCanvasFeed(u._id)
   assert.equal((await store.usersWithCanvas()).some((x) => x.userId === u._id), false)
 })
+
+test('changing the password bumps tokenVersion (signs out old sessions)', async () => {
+  const u = await store.createUser({ email: 'tv@t.com', name: 'T', passwordHash: 'x' })
+  assert.equal((await store.getUserById(u._id)).tokenVersion || 0, 0)
+  assert.equal(await store.setPasswordHash(u._id, 'y'), 1)
+  assert.equal(await store.setPasswordHash(u._id, 'z'), 2)
+  assert.equal((await store.getUserById(u._id)).tokenVersion, 2)
+})

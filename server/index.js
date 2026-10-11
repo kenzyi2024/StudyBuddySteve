@@ -20,6 +20,7 @@ import {
   requireAuth,
   signPurposeToken,
   verifyPurposeToken,
+  verifyPurposeTokenDetails,
 } from './lib/auth.js'
 import {
   PROVIDERS,
@@ -36,8 +37,17 @@ import { initSms, smsEnabled, sendSms } from './lib/sms.js'
 import { initEmail, emailEnabled, sendEmail } from './lib/email.js'
 import { generatePlan, DEFAULT_PREFS } from './lib/studyPlanner.js'
 import { initMonitoring, captureError } from './lib/monitoring.js'
+import { productionConfigErrors } from './lib/config.js'
+import { validateEventPatch } from './lib/validate.js'
 
 dotenv.config()
+
+const configErrors = productionConfigErrors()
+if (configErrors.length) {
+  // eslint-disable-next-line no-console
+  console.error(`Refusing to start in production: ${configErrors.join('; ')}`)
+  process.exit(1)
+}
 
 const app = express()
 // Cloud Run terminates TLS at a proxy; trust it so rate-limit + secure cookies
@@ -76,6 +86,18 @@ app.use((_req, res, next) => {
 })
 
 app.use(attachUser) // reads Bearer header / cookie / ?token
+
+// Reject sessions issued before the user's last password change.
+app.use(async (req, _res, next) => {
+  if (req.userId) {
+    const user = await store.getUserById(req.userId)
+    if (!user || (user.tokenVersion || 0) !== req.tokenVersion) {
+      delete req.userId
+      delete req.tokenVersion
+    }
+  }
+  next()
+})
 
 // --- rate limiting ---
 const limiterOpts = { standardHeaders: true, legacyHeaders: false }
@@ -160,7 +182,7 @@ app.post('/api/auth/register', async (req, res) => {
   }
   const user = await store.createUser({ email, name, passwordHash: await hashPassword(password) })
   sendVerifyEmail(user)
-  const token = issueSession(res, user._id)
+  const token = issueSession(res, user._id, user.tokenVersion || 0)
   res.status(201).json({ user: publicUser(user), token })
 })
 
@@ -168,7 +190,7 @@ app.post('/api/auth/register', async (req, res) => {
 app.post('/api/auth/forgot', async (req, res) => {
   const user = await store.findUserByEmail(req.body?.email || '')
   if (user && emailEnabled()) {
-    const token = signPurposeToken(user._id, 'reset', '1h')
+    const token = signPurposeToken(user._id, 'reset', '1h', user.tokenVersion || 0)
     const link = `${FRONTEND_URL}/?reset=${token}`
     sendEmail(
       user.email,
@@ -185,11 +207,14 @@ app.post('/api/auth/reset', async (req, res) => {
   if (!password || password.length < 8) {
     return res.status(400).json({ error: 'Password must be at least 8 characters' })
   }
-  const userId = verifyPurposeToken(token, 'reset')
-  const user = userId ? await store.getUserById(userId) : null
-  if (!user) return res.status(400).json({ error: 'This reset link is invalid or has expired' })
-  await store.setPasswordHash(userId, await hashPassword(password))
-  const sess = issueSession(res, userId)
+  const reset = verifyPurposeTokenDetails(token, 'reset')
+  const user = reset ? await store.getUserById(reset.uid) : null
+  // A used link no longer matches: the first reset bumped the token version.
+  if (!user || (user.tokenVersion || 0) !== reset.tv) {
+    return res.status(400).json({ error: 'This reset link is invalid or has expired' })
+  }
+  const tokenVersion = await store.setPasswordHash(reset.uid, await hashPassword(password))
+  const sess = issueSession(res, reset.uid, tokenVersion)
   res.json({ user: publicUser(user), token: sess })
 })
 
@@ -213,7 +238,7 @@ app.post('/api/auth/login', async (req, res) => {
   if (!user || !(await verifyPassword(password || '', user.passwordHash))) {
     return res.status(401).json({ error: 'Invalid email or password' })
   }
-  const token = issueSession(res, user._id)
+  const token = issueSession(res, user._id, user.tokenVersion || 0)
   res.json({ user: publicUser(user), token })
 })
 
@@ -273,9 +298,8 @@ app.get('/api/courses/:id/events', requireAuth, async (req, res) => {
 })
 
 app.patch('/api/events/:id', requireAuth, async (req, res) => {
-  const allowed = ['title', 'course', 'type', 'label', 'due', 'allDay', 'approved', 'done']
-  const patch = {}
-  for (const k of allowed) if (k in (req.body || {})) patch[k] = req.body[k]
+  const { patch, error } = validateEventPatch(req.body)
+  if (error) return res.status(400).json({ error })
   const updated = await store.updateEvent(req.userId, req.params.id, patch)
   if (!updated) return res.status(404).json({ error: 'Unknown event' })
   res.json({ event: updated })
@@ -688,5 +712,10 @@ Promise.all([store.initStore(), initSms(), initEmail(), initMonitoring()]).then(
         `▸ Steve's gateway on http://localhost:${PORT}  [store: ${mode}] [push: ${pushOn ? 'on' : 'off'}] [sms: ${smsOn ? 'on' : 'off'}] [email: ${emailOn ? 'on' : 'off'}] [sentry: ${monOn ? 'on' : 'off'}]`,
       )
     })
+  },
+  (err) => {
+    // eslint-disable-next-line no-console
+    console.error('Startup failed:', err?.message || err)
+    process.exit(1)
   },
 )

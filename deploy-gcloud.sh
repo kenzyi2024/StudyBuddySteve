@@ -21,6 +21,9 @@ set -euo pipefail
 : "${JWT_SECRET:?set JWT_SECRET}"
 : "${FRONTEND_URL:=https://example.vercel.app}"
 REGION="${REGION:-us-central1}"
+# Shared secret between gateway and parser so only the gateway can call /parse
+# (the parser URL is public and may hold an LLM key). Generated per deploy.
+PARSER_SHARED_SECRET="${PARSER_SHARED_SECRET:-$(openssl rand -hex 32)}"
 
 # Optional OAuth / LLM keys (leave empty to skip). Passed through if set.
 GOOGLE_CLIENT_ID="${GOOGLE_CLIENT_ID:-}"
@@ -38,7 +41,7 @@ gcloud services enable run.googleapis.com cloudbuild.googleapis.com artifactregi
 
 # --- 1. Python parser -------------------------------------------------
 echo "▸ Deploying steve-parser…"
-PARSER_ENV="PYTHONUNBUFFERED=1"
+PARSER_ENV="PYTHONUNBUFFERED=1,PARSER_SHARED_SECRET=$PARSER_SHARED_SECRET"
 [ -n "$ANTHROPIC_API_KEY" ] && PARSER_ENV="$PARSER_ENV,ANTHROPIC_API_KEY=$ANTHROPIC_API_KEY"
 [ -n "$OPENAI_API_KEY" ] && PARSER_ENV="$PARSER_ENV,OPENAI_API_KEY=$OPENAI_API_KEY"
 
@@ -56,7 +59,7 @@ echo "  parser at: $PARSER_URL"
 
 # --- 2. Node gateway --------------------------------------------------
 echo "▸ Deploying steve-gateway…"
-GW_ENV="NODE_ENV=production,PARSER_SERVICE_URL=$PARSER_URL,FRONTEND_URL=$FRONTEND_URL,MONGODB_URI=$MONGODB_URI,JWT_SECRET=$JWT_SECRET"
+GW_ENV="NODE_ENV=production,PARSER_SERVICE_URL=$PARSER_URL,FRONTEND_URL=$FRONTEND_URL,MONGODB_URI=$MONGODB_URI,JWT_SECRET=$JWT_SECRET,PARSER_SHARED_SECRET=$PARSER_SHARED_SECRET"
 [ -n "$GOOGLE_CLIENT_ID" ] && GW_ENV="$GW_ENV,GOOGLE_CLIENT_ID=$GOOGLE_CLIENT_ID,GOOGLE_CLIENT_SECRET=$GOOGLE_CLIENT_SECRET"
 [ -n "$MS_CLIENT_ID" ] && GW_ENV="$GW_ENV,MS_CLIENT_ID=$MS_CLIENT_ID,MS_CLIENT_SECRET=$MS_CLIENT_SECRET"
 

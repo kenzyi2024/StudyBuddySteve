@@ -17,8 +17,13 @@ export async function parseSyllabus(buffer, filename, mime) {
   const controller = new AbortController()
   const timer = setTimeout(() => controller.abort(), TIMEOUT_MS)
   try {
+    // Shared secret so only the gateway can use the (public) parser service.
+    const headers = process.env.PARSER_SHARED_SECRET
+      ? { 'X-Parser-Key': process.env.PARSER_SHARED_SECRET }
+      : {}
     const resp = await fetch(`${PARSER_URL}/parse`, {
       method: 'POST',
+      headers,
       body: form,
       signal: controller.signal,
     })

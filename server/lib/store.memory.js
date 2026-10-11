@@ -66,7 +66,10 @@ export async function getUserById(userId) {
 }
 export async function setPasswordHash(userId, passwordHash) {
   const u = users.get(userId)
-  if (u) u.passwordHash = passwordHash
+  if (!u) return 0
+  u.passwordHash = passwordHash
+  u.tokenVersion = (u.tokenVersion || 0) + 1
+  return u.tokenVersion
 }
 export async function setEmailVerified(userId, val = true) {
   const u = users.get(userId)

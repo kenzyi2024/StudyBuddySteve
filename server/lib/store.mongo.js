@@ -6,6 +6,11 @@
  * shape the frontend and .ics/sync code expect.
  */
 import { User, Course, Event } from '../models/index.js'
+import { EVENT_TYPES } from './validate.js'
+
+// Ids from the URL that aren't ObjectIds would throw a CastError (→ 500);
+// treat them as "not found" instead.
+const isId = (id) => /^[a-f0-9]{24}$/i.test(String(id))
 
 // Normalize a Mongoose doc to the API shape ({ id, ... }).
 function courseOut(c) {
@@ -48,8 +53,15 @@ export async function createUser({ email, name, passwordHash }) {
 export async function getUserById(userId) {
   return User.findById(userId)
 }
+// Changing the password bumps tokenVersion, which signs out every existing
+// session and voids outstanding reset links. Returns the new version.
 export async function setPasswordHash(userId, passwordHash) {
-  await User.updateOne({ _id: userId }, { passwordHash })
+  const u = await User.findOneAndUpdate(
+    { _id: userId },
+    { passwordHash, $inc: { tokenVersion: 1 } },
+    { new: true },
+  ).select('tokenVersion')
+  return u?.tokenVersion ?? 0
 }
 export async function setEmailVerified(userId, val = true) {
   await User.updateOne({ _id: userId }, { emailVerified: !!val })
@@ -69,6 +81,7 @@ export async function setCourseStatus(userId, courseId, status) {
   return courseOut(c)
 }
 export async function getCourse(userId, courseId) {
+  if (!isId(courseId)) return null
   return courseOut(await Course.findOne({ _id: courseId, user: userId }))
 }
 export async function setCourseName(userId, courseId, name) {
@@ -77,9 +90,7 @@ export async function setCourseName(userId, courseId, name) {
 
 // Known event types; anything else is coerced to 'other' so an unexpected
 // type value can never fail the whole insert.
-const KNOWN_TYPES = new Set([
-  'reading', 'homework', 'quiz', 'exam', 'project', 'study', 'other', 'assignment',
-])
+const KNOWN_TYPES = new Set(EVENT_TYPES)
 
 // --- events ---
 export async function addEvents(userId, courseId, list = []) {
@@ -209,12 +220,16 @@ export async function approvedEventsForCourse(userId, courseId) {
 }
 
 export async function updateEvent(userId, eventId, patch) {
+  if (!isId(eventId)) return null
   const clean = {}
   for (const k of ['title', 'type', 'label', 'due', 'allDay', 'approved', 'done']) {
     if (k in patch) clean[k] = k === 'due' ? new Date(patch[k]) : patch[k]
   }
   if ('course' in patch) clean.courseName = patch.course
-  const e = await Event.findOneAndUpdate({ _id: eventId, user: userId }, clean, { new: true })
+  const e = await Event.findOneAndUpdate({ _id: eventId, user: userId }, clean, {
+    new: true,
+    runValidators: true,
+  })
   return eventOut(e)
 }
 
@@ -231,6 +246,7 @@ export async function commitCourse(userId, courseId) {
 }
 
 export async function deleteEvent(userId, eventId) {
+  if (!isId(eventId)) return false
   const r = await Event.deleteOne({ _id: eventId, user: userId })
   return r.deletedCount > 0
 }

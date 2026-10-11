@@ -18,6 +18,8 @@ const UserSchema = new Schema(
     email: { type: String, required: true, unique: true, index: true, lowercase: true, trim: true },
     name: String,
     passwordHash: { type: String, required: true },
+    // Bumped on password change; sessions signed with an older version are rejected.
+    tokenVersion: { type: Number, default: 0 },
     emailVerified: { type: Boolean, default: false },
     // OAuth tokens for calendar providers (stored per-user).
     google: TokenSchema,

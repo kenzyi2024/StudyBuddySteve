@@ -22,6 +22,9 @@ export async function initStore() {
       mode = 'mongo'
       return mode
     } catch (e) {
+      // In production, never fall back to memory: data would vanish on restart
+      // and differ between instances. Fail so the platform retries the boot.
+      if (process.env.NODE_ENV === 'production') throw e
       // eslint-disable-next-line no-console
       console.warn(
         `⚠  MongoDB unavailable — falling back to IN-MEMORY store (data resets on ` +

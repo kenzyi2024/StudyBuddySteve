@@ -17,7 +17,10 @@ const COOKIE = 'steve_session'
 const MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000 // 7 days
 
 function secret() {
-  return process.env.JWT_SECRET || 'dev_insecure_secret_change_me'
+  if (process.env.JWT_SECRET) return process.env.JWT_SECRET
+  // Never sign real sessions with a publicly-known fallback.
+  if (process.env.NODE_ENV === 'production') throw new Error('JWT_SECRET is not set')
+  return 'dev_insecure_secret_change_me'
 }
 
 export async function hashPassword(plain) {
@@ -27,26 +30,35 @@ export async function verifyPassword(plain, hash) {
   return bcrypt.compare(plain, hash)
 }
 
-export function signToken(userId) {
-  return jwt.sign({ uid: String(userId) }, secret(), { expiresIn: '7d' })
+// Session tokens carry the user's tokenVersion (`tv`). Bumping the version
+// (e.g. on password reset) invalidates every session issued before it.
+export function signToken(userId, tokenVersion = 0) {
+  return jwt.sign({ uid: String(userId), tv: tokenVersion }, secret(), { expiresIn: '7d' })
 }
 
 // Short-lived, single-purpose tokens (email verification, password reset).
-export function signPurposeToken(userId, purpose, expiresIn = '1h') {
-  return jwt.sign({ uid: String(userId), purpose }, secret(), { expiresIn })
+// `tv` lets a reset link be single-use: once the password changes, the
+// version moves on and the old link no longer matches.
+export function signPurposeToken(userId, purpose, expiresIn = '1h', tokenVersion = 0) {
+  return jwt.sign({ uid: String(userId), purpose, tv: tokenVersion }, secret(), { expiresIn })
 }
+// Returns the user id, or null. Use verifyPurposeTokenDetails when the token
+// version also matters (password reset).
 export function verifyPurposeToken(token, purpose) {
+  return verifyPurposeTokenDetails(token, purpose)?.uid ?? null
+}
+export function verifyPurposeTokenDetails(token, purpose) {
   try {
     const d = jwt.verify(token, secret())
-    return d.purpose === purpose ? d.uid : null
+    return d.purpose === purpose ? { uid: d.uid, tv: d.tv ?? 0 } : null
   } catch {
     return null
   }
 }
 
 // Issue a session: sets the cookie AND returns the raw token for the body.
-export function issueSession(res, userId) {
-  const token = signToken(userId)
+export function issueSession(res, userId, tokenVersion = 0) {
+  const token = signToken(userId, tokenVersion)
   // Cross-site cookies require SameSite=None + Secure. Enable in production or
   // when explicitly configured; use Lax locally so http://localhost works.
   const crossSite =
@@ -72,15 +84,28 @@ function tokenFromRequest(req) {
   return null
 }
 
-// Populate req.userId if a valid token is present (header, cookie, or query).
+// Decode a session token → { uid, tv }, or null. Purpose tokens (email
+// verification, password reset) share the signing secret but are NOT sessions,
+// so they're rejected here — otherwise an emailed link would log you in.
+export function verifySessionToken(token) {
+  try {
+    const d = jwt.verify(token, secret())
+    if (d.purpose) return null
+    return { uid: d.uid, tv: d.tv ?? 0 }
+  } catch {
+    return null
+  }
+}
+
+// Populate req.userId / req.tokenVersion if a valid session token is present
+// (header, cookie, or query). The token version is checked against the user
+// record by the gateway (see checkTokenVersion in index.js).
 export function attachUser(req, _res, next) {
   const token = tokenFromRequest(req)
-  if (token) {
-    try {
-      req.userId = jwt.verify(token, secret()).uid
-    } catch {
-      /* invalid/expired — anonymous */
-    }
+  const session = token ? verifySessionToken(token) : null
+  if (session) {
+    req.userId = session.uid
+    req.tokenVersion = session.tv
   }
   next()
 }

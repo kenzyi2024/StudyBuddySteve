@@ -9,12 +9,19 @@ Run:
 """
 from __future__ import annotations
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+import os
+
+from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 
 from extractor import extract
 from parser import parse as parse_syllabus
+from security import MAX_UPLOAD_BYTES, is_authorized
 
 app = FastAPI(title="Study Buddy Steve Parser", version="0.2.0")
+
+SHARED_SECRET = os.environ.get("PARSER_SHARED_SECRET", "")
+if not SHARED_SECRET:
+    print("⚠  PARSER_SHARED_SECRET not set — /parse accepts any caller (dev only).")
 
 
 @app.get("/health")
@@ -23,8 +30,15 @@ def health():
 
 
 @app.post("/parse")
-async def parse(file: UploadFile = File(...)):
-    data = await file.read()
+async def parse(
+    file: UploadFile = File(...),
+    x_parser_key: str | None = Header(default=None),
+):
+    if not is_authorized(x_parser_key, SHARED_SECRET):
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    data = await file.read(MAX_UPLOAD_BYTES + 1)
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise HTTPException(status_code=413, detail="File too large (max 20 MB)")
     if not data:
         raise HTTPException(status_code=400, detail="Empty file")
 

@@ -67,8 +67,12 @@ both URLs at the end.
 
 **Or deploy manually:**
 ```bash
+# Shared secret so only the gateway can call the parser (set on BOTH services).
+PARSER_SHARED_SECRET="$(openssl rand -hex 32)"
+
 gcloud run deploy steve-parser  --source ./ai-parser --region us-central1 \
-  --allow-unauthenticated --memory 1Gi
+  --allow-unauthenticated --memory 1Gi \
+  --set-env-vars PARSER_SHARED_SECRET="$PARSER_SHARED_SECRET"
 
 PARSER_URL=$(gcloud run services describe steve-parser --region us-central1 \
   --format 'value(status.url)')
@@ -76,8 +80,13 @@ PARSER_URL=$(gcloud run services describe steve-parser --region us-central1 \
 gcloud run deploy steve-gateway --source ./server --region us-central1 \
   --allow-unauthenticated --memory 512Mi \
   --set-env-vars NODE_ENV=production,MONGODB_URI="$MONGODB_URI",\
-JWT_SECRET="$JWT_SECRET",FRONTEND_URL="$FRONTEND_URL",PARSER_SERVICE_URL="$PARSER_URL"
+JWT_SECRET="$JWT_SECRET",FRONTEND_URL="$FRONTEND_URL",PARSER_SERVICE_URL="$PARSER_URL",\
+PARSER_SHARED_SECRET="$PARSER_SHARED_SECRET"
 ```
+
+> In production the gateway **refuses to start** without `JWT_SECRET` and a
+> reachable `MONGODB_URI` (it never falls back to the in-memory store), so a bad
+> deploy fails loudly instead of silently losing data.
 
 `gcloud run deploy --source` builds the image from the Dockerfile in each folder
 using Cloud Build — no local Docker needed. Note the gateway URL, e.g.
